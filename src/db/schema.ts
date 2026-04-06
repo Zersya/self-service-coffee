@@ -6,5 +6,6 @@ export const orders = pgTable('orders', {
   amount: integer('amount').notNull(),
   grams: numeric('grams').notNull(),
   status: text('status').notNull().default('pending'),
+  snapToken: text('snap_token'), // NEW: Store snap token for later use
   createdAt: timestamp('created_at').defaultNow(),
 });
