@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard } from 'lucide-react';
 
 const PRICE_PER_250G = 100000;
 const PRICE_PER_GRAM = PRICE_PER_250G / 250;
@@ -10,7 +10,81 @@ declare global {
   }
 }
 
+function Dashboard() {
+  const [history, setHistory] = useState<any[]>([]);
+  const [balance, setBalance] = useState<number>(0);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/balance').then(res => res.json()),
+      fetch('/api/history').then(res => res.json())
+    ]).then(([balanceData, historyData]) => {
+      if (balanceData.error || historyData.error) {
+        setDbError(balanceData.error || historyData.error);
+      } else {
+        setBalance(balanceData.balance);
+        setHistory(historyData);
+      }
+      setLoading(false);
+    }).catch(err => {
+      setDbError("Failed to connect to server");
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500" /></div>;
+
+  if (dbError) return (
+    <div className="p-8 text-center">
+      <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-4">
+        <p className="font-medium">Database Not Configured</p>
+        <p className="text-sm mt-1">Please set DATABASE_URL in your secrets and run `npm run db:push`.</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="p-6 sm:p-8">
+      <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 mb-6">
+        <div className="flex items-center gap-3 text-amber-800 mb-2">
+          <Wallet className="w-5 h-5" />
+          <h3 className="font-medium">Total Revenue</h3>
+        </div>
+        <p className="text-3xl font-bold text-amber-900">Rp {balance.toLocaleString('id-ID')}</p>
+      </div>
+
+      <h3 className="font-medium text-stone-800 mb-4 flex items-center gap-2">
+        <History className="w-5 h-5" /> Recent Orders
+      </h3>
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+        {history.length === 0 ? (
+          <p className="text-stone-500 text-sm text-center py-4">No orders yet</p>
+        ) : (
+          history.map(order => (
+            <div key={order.id} className="bg-white border border-stone-200 rounded-xl p-4 flex justify-between items-center">
+              <div>
+                <p className="font-medium text-stone-800">Rp {order.amount.toLocaleString('id-ID')}</p>
+                <p className="text-xs text-stone-500">{order.grams}g Coffee • {new Date(order.createdAt).toLocaleDateString()}</p>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                order.status === 'settlement' || order.status === 'capture' ? 'bg-green-100 text-green-700' :
+                order.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {order.status}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'pay' | 'dashboard'>('pay');
   const [grams, setGrams] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -148,9 +222,25 @@ export default function App() {
           <p className="text-stone-400 text-sm mt-1 relative z-10">Self-Service Coffee Payment</p>
         </div>
 
-        <div className="p-6 sm:p-8">
-          {!orderId && !isSuccess && (
-            <div className="space-y-6">
+        <div className="flex border-b border-stone-200">
+          <button
+            onClick={() => setActiveTab('pay')}
+            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'pay' ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50' : 'text-stone-500 hover:text-stone-700 bg-stone-50'}`}
+          >
+            <QrCode className="w-4 h-4" /> Pay
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'dashboard' ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50' : 'text-stone-500 hover:text-stone-700 bg-stone-50'}`}
+          >
+            <LayoutDashboard className="w-4 h-4" /> Dashboard
+          </button>
+        </div>
+
+        {activeTab === 'pay' ? (
+          <div className="p-6 sm:p-8">
+            {!orderId && !isSuccess && (
+              <div className="space-y-6">
               <div>
                 <label htmlFor="grams" className="block text-sm font-medium text-stone-600 mb-2">
                   Coffee Used (grams)
@@ -267,7 +357,10 @@ export default function App() {
               </button>
             </div>
           )}
-        </div>
+          </div>
+        ) : (
+          <Dashboard />
+        )}
       </div>
     </div>
   );

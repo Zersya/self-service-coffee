@@ -9,16 +9,19 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "uuid": "^13.0.0",
@@ -29,6 +32,7 @@
     "@types/node": "^22.14.0",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
+    "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
