@@ -1,20 +1,47 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Coffee Self-Service QRIS - Honesty Bar
 
-# Run and deploy your AI Studio app
+A self-service coffee payment application using Midtrans QRIS. Customers can pay for coffee based on the grams they consume.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/46c593a2-a857-434b-8008-28dfe07ff672
+- **QRIS Payment Integration** - Secure payments via Midtrans Snap
+- **Gram-based Pricing** - Calculate payment based on coffee grams used
+- **Real-time Dashboard** - View order history and total revenue
+- **Order Management** - Cancel pending orders or continue payment
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. Set up environment variables in `.env.local`:
+   - `GEMINI_API_KEY` - Your Gemini API key
+   - `MIDTRANS_SERVER_KEY` - Midtrans server key
+   - `MIDTRANS_CLIENT_KEY` - Midtrans client key
+   - `DATABASE_URL` - PostgreSQL database URL
+
+3. Run database migrations:
+   ```bash
+   npm run db:push
+   ```
+
+4. Start the app:
+   ```bash
+   npm run dev
+   ```
+
+## Tech Stack
+
+- React + TypeScript
+- Express.js backend
+- Tailwind CSS
+- Midtrans Payment Gateway
+- Drizzle ORM
+
+## License
+
+MIT
