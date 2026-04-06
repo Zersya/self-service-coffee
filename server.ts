@@ -58,7 +58,7 @@ async function startServer() {
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
           custom_field1: `Coffee: ${grams}g`,
-          custom_field3: 'coffee-officee',
+          custom_field3: 'coffee-office',
         }),
       });
 
