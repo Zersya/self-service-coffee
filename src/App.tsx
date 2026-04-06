@@ -90,6 +90,8 @@ export default function App() {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [snapReady, setSnapReady] = useState(false);
+  const [snapError, setSnapError] = useState<string | null>(null);
 
   const amount = grams ? Math.round(parseFloat(grams) * PRICE_PER_GRAM) : 0;
 
@@ -99,17 +101,43 @@ export default function App() {
       .then(data => {
         if (!data.clientKey) {
           console.warn("Midtrans Client Key is missing");
+          setSnapError("Midtrans configuration missing");
           return;
         }
+        
+        // Check if script already exists
+        if (document.getElementById('midtrans-snap-script')) {
+          if (window.snap) {
+            setSnapReady(true);
+          }
+          return;
+        }
+        
         const script = document.createElement('script');
+        script.id = 'midtrans-snap-script';
         script.src = data.isProduction 
           ? 'https://app.midtrans.com/snap/snap.js'
           : 'https://app.sandbox.midtrans.com/snap/snap.js';
         script.setAttribute('data-client-key', data.clientKey);
         script.async = true;
+        
+        script.onload = () => {
+          console.log('Midtrans Snap script loaded successfully');
+          setSnapReady(true);
+          setSnapError(null);
+        };
+        
+        script.onerror = () => {
+          console.error('Failed to load Midtrans Snap script');
+          setSnapError('Failed to load payment system');
+        };
+        
         document.body.appendChild(script);
       })
-      .catch(err => console.error("Failed to load config", err));
+      .catch(err => {
+        console.error("Failed to load config", err);
+        setSnapError('Failed to load configuration');
+      });
   }, []);
 
   useEffect(() => {
@@ -141,6 +169,11 @@ export default function App() {
       return;
     }
 
+    if (!snapReady) {
+      setError("Payment system is still loading. Please wait a moment and try again.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setOrderId(null);
@@ -164,28 +197,30 @@ export default function App() {
       setOrderId(data.orderId);
       setStatus(data.status);
 
-      if (window.snap) {
-        // Use embed instead of pay for a seamless in-page experience
-        window.snap.embed(data.token, {
-          embedId: 'snap-container',
-          onSuccess: function(result: any) {
-            setStatus('settlement');
-          },
-          onPending: function(result: any) {
-            setStatus('pending');
-          },
-          onError: function(result: any) {
-            setStatus('cancel');
-            setError('Payment failed');
-          },
-          onClose: function() {
-            // User closed the embedded UI or it was unmounted
-          }
-        });
-      } else {
-        // Fallback if snap.js failed to load
-        window.location.href = data.redirectUrl;
-      }
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        if (window.snap) {
+          // Use embed instead of pay for a seamless in-page experience
+          window.snap.embed(data.token, {
+            embedId: 'snap-container',
+            onSuccess: function(result: any) {
+              setStatus('settlement');
+            },
+            onPending: function(result: any) {
+              setStatus('pending');
+            },
+            onError: function(result: any) {
+              setStatus('cancel');
+              setError('Payment failed: ' + (result.status_message || 'Unknown error'));
+            },
+            onClose: function() {
+              // User closed the embedded UI or it was unmounted
+            }
+          });
+        } else {
+          setError('Payment system not available. Please refresh the page.');
+        }
+      }, 100);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -194,6 +229,11 @@ export default function App() {
   };
 
   const resetPayment = () => {
+    // Clean up snap embed if it exists
+    const snapContainer = document.getElementById('snap-container');
+    if (snapContainer) {
+      snapContainer.innerHTML = '';
+    }
     setGrams('');
     setOrderId(null);
     setStatus(null);
@@ -279,15 +319,27 @@ export default function App() {
                 </div>
               )}
 
+              {snapError && (
+                <div className="bg-amber-50 text-amber-700 p-3 rounded-lg text-sm flex items-start gap-2">
+                  <XCircle className="w-5 h-5 shrink-0" />
+                  <p>Payment system unavailable: {snapError}</p>
+                </div>
+              )}
+
               <button
                 onClick={handleGenerateQR}
-                disabled={loading || amount <= 0}
+                disabled={loading || amount <= 0 || !snapReady}
                 className="w-full bg-stone-900 hover:bg-stone-800 text-white font-medium py-4 rounded-xl shadow-lg shadow-stone-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Generating QRIS...
+                  </>
+                ) : !snapReady ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Loading Payment System...
                   </>
                 ) : (
                   <>
@@ -308,7 +360,14 @@ export default function App() {
               
               <div className="w-full bg-white rounded-2xl shadow-sm border-2 border-stone-100 overflow-hidden">
                 {/* This is where the Midtrans Snap UI will be embedded */}
-                <div id="snap-container" className="w-full min-h-[400px]"></div>
+                <div id="snap-container" className="w-full min-h-[400px] flex items-center justify-center">
+                  {!snapReady && (
+                    <div className="text-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500 mb-2" />
+                      <p className="text-stone-500 text-sm">Loading payment interface...</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <button
