@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # Required: Your external PostgreSQL database URL
+      - DATABASE_URL=${DATABASE_URL}
+      
+      # Required: Midtrans configuration
+      - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY}
+      - MIDTRANS_CLIENT_KEY=${MIDTRANS_CLIENT_KEY}
+      - MIDTRANS_IS_PRODUCTION=${MIDTRANS_IS_PRODUCTION:-false}
+      
+      # Optional: Gemini API key (if using AI features)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      
+      # Production mode
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/config"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
