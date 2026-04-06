@@ -75,7 +75,8 @@ async function startServer() {
             orderId,
             amount: Math.round(amount),
             grams: grams.toString(),
-            status: "pending"
+            status: "pending",
+            snapToken: data.token // Store snap token for later use
           });
         } catch (e) {
           console.error("DB Insert Error:", e);
@@ -146,6 +147,168 @@ async function startServer() {
       });
     } catch (error) {
       console.error("Status Error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Cancel transaction endpoint
+  app.post("/api/cancel/:orderId", async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      
+      const serverKey = (process.env.MIDTRANS_SERVER_KEY || "").trim();
+      const isProduction = process.env.MIDTRANS_IS_PRODUCTION === "true";
+      const apiUrl = isProduction
+        ? "https://api.midtrans.com/v2"
+        : "https://api.sandbox.midtrans.com/v2";
+
+      if (!serverKey) {
+        return res.status(500).json({ error: "Midtrans Server Key is not configured" });
+      }
+
+      const authString = Buffer.from(`${serverKey}:`).toString("base64");
+
+      // Call Midtrans cancel API
+      const response = await fetch(`${apiUrl}/${orderId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${authString}`,
+        },
+      });
+
+      const data = await response.json();
+
+      // 200 = success, 412 = transaction already expired/cancelled
+      if (data.status_code === "200" || data.status_code === "412") {
+        const newStatus = "cancel";
+        
+        if (db) {
+          try {
+            await db.update(orders)
+              .set({ status: newStatus })
+              .where(eq(orders.orderId, orderId));
+          } catch (e) {
+            console.error("DB Update Error in cancel:", e);
+          }
+        }
+
+        return res.json({ 
+          success: true, 
+          message: "Payment cancelled successfully",
+          status: newStatus
+        });
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: data.status_message || "Failed to cancel payment"
+        });
+      }
+    } catch (error) {
+      console.error("Cancel Error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Continue payment endpoint - creates NEW order with fresh token (Midtrans doesn't allow reusing order_id)
+  app.post("/api/continue-payment/:orderId", async (req, res) => {
+    console.log("[Continue Payment] Request for order:", req.params.orderId);
+    
+    try {
+      const { orderId } = req.params;
+      
+      if (!db) {
+        console.log("[Continue Payment] Database not configured");
+        return res.status(503).json({ error: "Database not configured" });
+      }
+
+      // Look up the existing order
+      const existingOrders = await db.select().from(orders).where(eq(orders.orderId, orderId));
+      if (existingOrders.length === 0) {
+        console.log("[Continue Payment] Order not found:", orderId);
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      const oldOrder = existingOrders[0];
+      console.log("[Continue Payment] Found order:", oldOrder.orderId, "status:", oldOrder.status);
+      
+      // Only allow continuing for pending orders
+      if (oldOrder.status !== "pending") {
+        console.log("[Continue Payment] Order not pending:", oldOrder.status);
+        return res.status(400).json({ error: `Cannot continue payment for ${oldOrder.status} order` });
+      }
+
+      const serverKey = (process.env.MIDTRANS_SERVER_KEY || "").trim();
+      const isProduction = process.env.MIDTRANS_IS_PRODUCTION === "true";
+      const snapApiUrl = isProduction
+        ? "https://app.midtrans.com/snap/v1/transactions"
+        : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+      if (!serverKey) {
+        console.log("[Continue Payment] Server key not configured");
+        return res.status(500).json({ error: "Midtrans Server Key is not configured" });
+      }
+
+      const authString = Buffer.from(`${serverKey}:`).toString("base64");
+
+      // Create NEW order with fresh UUID (Midtrans doesn't allow reusing order_id)
+      const newOrderId = `coffee-${uuidv4()}`;
+      console.log("[Continue Payment] Creating new order:", newOrderId);
+
+      const response = await fetch(snapApiUrl, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${authString}`,
+        },
+        body: JSON.stringify({
+          transaction_details: {
+            order_id: newOrderId,
+            gross_amount: oldOrder.amount,
+          },
+          enabled_payments: ["qris", "gopay", "shopeepay"],
+          custom_field1: oldOrder.grams ? `Coffee: ${oldOrder.grams}g` : 'Coffee purchase',
+          custom_field3: 'coffee-office',
+        }),
+      });
+
+      const data = await response.json();
+      console.log("[Continue Payment] Snap response status:", response.status);
+
+      if (data.error_messages) {
+        console.error("[Continue Payment] Midtrans Error:", JSON.stringify(data, null, 2));
+        return res.status(400).json({ error: `Midtrans Error: ${data.error_messages.join(', ')}` });
+      }
+
+      // Insert NEW order into database with fresh token
+      console.log("[Continue Payment] Inserting new order into database...");
+      await db.insert(orders).values({
+        orderId: newOrderId,
+        amount: oldOrder.amount,
+        grams: oldOrder.grams,
+        status: "pending",
+        snapToken: data.token
+      });
+
+      // Mark the old order as replaced
+      console.log("[Continue Payment] Marking old order as replaced...");
+      await db.update(orders)
+        .set({ status: "replaced" })
+        .where(eq(orders.orderId, orderId));
+
+      console.log("[Continue Payment] Success! New order created:", newOrderId);
+      res.json({
+        orderId: newOrderId,
+        oldOrderId: orderId,
+        token: data.token,
+        redirectUrl: data.redirect_url,
+        grams: oldOrder.grams,
+        amount: oldOrder.amount,
+      });
+    } catch (error) {
+      console.error("[Continue Payment] Error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
