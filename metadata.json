@@ -1,0 +1,5 @@
+{
+  "name": "Coffee Self-Service QRIS",
+  "description": "Self-service coffee payment app using Midtrans QRIS. Calculates price based on coffee grams used.",
+  "requestFramePermissions": []
+}
