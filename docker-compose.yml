@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       # Required: Your external PostgreSQL database URL
       - DATABASE_URL=${DATABASE_URL}
