@@ -173,6 +173,66 @@ async function startServer() {
     }
   });
 
+  // Midtrans Webhook - receives payment notifications
+  app.post("/api/webhooks/midtrans", async (req, res) => {
+    try {
+      const { order_id, transaction_status, status_code, gross_amount, payment_type } = req.body;
+
+      console.log("Midtrans Webhook Received:", {
+        order_id,
+        transaction_status,
+        status_code,
+        gross_amount,
+        payment_type,
+        timestamp: new Date().toISOString()
+      });
+
+      if (!order_id || !transaction_status) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      // Midtrans transaction statuses that indicate successful payment
+      const successStatuses = ["settlement", "capture"];
+      // Statuses that indicate failed/cancelled payment
+      const failedStatuses = ["cancel", "deny", "expire", "failure"];
+
+      let newStatus = transaction_status;
+
+      if (successStatuses.includes(transaction_status)) {
+        newStatus = "settlement";
+      } else if (failedStatuses.includes(transaction_status)) {
+        newStatus = "failed";
+      } else if (transaction_status === "pending") {
+        newStatus = "pending";
+      }
+
+      if (db) {
+        try {
+          await db.update(orders)
+            .set({ status: newStatus })
+            .where(eq(orders.orderId, order_id));
+          console.log(`Order ${order_id} status updated to: ${newStatus}`);
+        } catch (e) {
+          console.error("DB Update Error in webhook:", e);
+          // Still return 200 to Midtrans to prevent retries for DB errors
+        }
+      }
+
+      // Always return 200 OK to Midtrans to acknowledge receipt
+      // Midtrans will retry if it doesn't receive 200
+      res.status(200).json({ 
+        message: "Notification received",
+        order_id,
+        status: newStatus
+      });
+    } catch (error) {
+      console.error("Webhook Error:", error);
+      // Return 200 even on error to prevent Midtrans from retrying
+      // Log the error for investigation
+      res.status(200).json({ message: "Notification processed" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
