@@ -4,7 +4,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
-import { orders } from "./src/db/schema";
+import { orders, configs } from "./src/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 
 dotenv.config();
@@ -21,6 +21,40 @@ async function startServer() {
       clientKey: (process.env.MIDTRANS_CLIENT_KEY || "").trim(),
       isProduction: process.env.MIDTRANS_IS_PRODUCTION === "true"
     });
+  });
+
+  // Pricing endpoint - fetches from database or uses default
+  app.get("/api/pricing", async (req, res) => {
+    try {
+      const DEFAULT_PRICE_PER_250G = 100000;
+      
+      let pricePer250g = DEFAULT_PRICE_PER_250G;
+      
+      if (db) {
+        try {
+          const configResult = await db.select().from(configs).where(eq(configs.key, 'PRICE_PER_250G'));
+          if (configResult.length > 0) {
+            const parsedValue = parseInt(configResult[0].value, 10);
+            if (!isNaN(parsedValue) && parsedValue > 0) {
+              pricePer250g = parsedValue;
+            }
+          }
+        } catch (dbError) {
+          console.error("Database error fetching pricing config:", dbError);
+          // Fall back to default on DB error
+        }
+      }
+      
+      const pricePerGram = pricePer250g / 250;
+      
+      res.json({
+        pricePer250g,
+        pricePerGram
+      });
+    } catch (error) {
+      console.error("Pricing endpoint error:", error);
+      res.status(500).json({ error: "Failed to fetch pricing" });
+    }
   });
 
   app.post("/api/charge", async (req, res) => {

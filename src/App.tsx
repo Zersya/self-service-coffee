@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, X, Hourglass } from 'lucide-react';
 
-const PRICE_PER_250G = 100000;
-const PRICE_PER_GRAM = PRICE_PER_250G / 250;
-
 declare global {
   interface Window {
     snap: any;
@@ -315,12 +312,16 @@ export default function App() {
   const [snapReady, setSnapReady] = useState(false);
   const [snapError, setSnapError] = useState<string | null>(null);
   
+  // Pricing state
+  const [pricing, setPricing] = useState<{ pricePer250g: number; pricePerGram: number } | null>(null);
+  const [pricingError, setPricingError] = useState<string | null>(null);
+  
   // Payment tab cancel modal states
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const amount = grams ? Math.round(parseFloat(grams) * PRICE_PER_GRAM) : 0;
+  const amount = grams && pricing ? Math.round(parseFloat(grams) * pricing.pricePerGram) : 0;
 
   // Pending order from dashboard (for continuing payment)
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
@@ -448,6 +449,27 @@ export default function App() {
       .catch(err => {
         console.error("Failed to load config", err);
         setSnapError('Failed to load configuration');
+      });
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/pricing')
+      .then(res => res.json())
+      .then(data => {
+        if (data.pricePer250g && data.pricePerGram) {
+          setPricing({
+            pricePer250g: data.pricePer250g,
+            pricePerGram: data.pricePerGram
+          });
+          setPricingError(null);
+        } else {
+          console.error("Invalid pricing data received:", data);
+          setPricingError("Failed to load pricing configuration");
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load pricing", err);
+        setPricingError("Failed to load pricing");
       });
   }, []);
 
@@ -668,7 +690,7 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-xs text-stone-400 mt-2 text-right">
-                  Rate: Rp 100.000 / 250g
+                  Rate: Rp {pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
                 </p>
               </div>
 
@@ -686,6 +708,13 @@ export default function App() {
                 </div>
               )}
 
+              {pricingError && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2">
+                  <XCircle className="w-5 h-5 shrink-0" />
+                  <p>Pricing configuration unavailable: {pricingError}</p>
+                </div>
+              )}
+
               {snapError && (
                 <div className="bg-amber-50 text-amber-700 p-3 rounded-lg text-sm flex items-start gap-2">
                   <XCircle className="w-5 h-5 shrink-0" />
@@ -695,13 +724,18 @@ export default function App() {
 
               <button
                 onClick={handleGenerateQR}
-                disabled={loading || amount <= 0 || !snapReady}
+                disabled={loading || amount <= 0 || !snapReady || !pricing}
                 className="w-full bg-stone-900 hover:bg-stone-800 text-white font-medium py-4 rounded-xl shadow-lg shadow-stone-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Generating QRIS...
+                  </>
+                ) : !pricing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Loading Pricing...
                   </>
                 ) : !snapReady ? (
                   <>
