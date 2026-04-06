@@ -9,3 +9,9 @@ export const orders = pgTable('orders', {
   snapToken: text('snap_token'), // NEW: Store snap token for later use
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+export const configs = pgTable('configs', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
