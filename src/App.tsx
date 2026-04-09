@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
   interface Window {
@@ -7,11 +8,12 @@ declare global {
   }
 }
 
-function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void }) {
+function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null }) {
   const [history, setHistory] = useState<any[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   
   // Modal states
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -47,6 +49,10 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
 
   const handlePayNow = async () => {
     if (!selectedOrder || !onPayOrder) return;
+    if (!turnstileToken && turnstileSiteKey) {
+      setOrderActionError("Menunggu verifikasi keamanan. Silakan coba lagi.");
+      return;
+    }
     
     setRegeneratingToken(true);
     setOrderActionError(null);
@@ -54,7 +60,8 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
     try {
       const response = await fetch(`/api/continue-payment/${selectedOrder.orderId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turnstileToken })
       });
       
       const contentType = response.headers.get('content-type');
@@ -245,9 +252,14 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
             
             {selectedOrder.status === 'pending' ? (
               <div className="space-y-3 mb-4">
+                {turnstileSiteKey && (
+                  <div className="flex justify-center mb-4">
+                    <Turnstile siteKey={turnstileSiteKey} onSuccess={setTurnstileToken} />
+                  </div>
+                )}
                 <button
                   onClick={handlePayNow}
-                  disabled={regeneratingToken}
+                  disabled={regeneratingToken || (!!turnstileSiteKey && !turnstileToken)}
                   className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold py-4 rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wide"
                 >
                   {regeneratingToken ? (
@@ -380,10 +392,16 @@ export default function App() {
     }
   }, [pendingSnapToken, snapReady, activeTab]);
 
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
   useEffect(() => {
     fetch('/api/config')
       .then(res => res.json())
       .then(data => {
+        if (data.turnstileSiteKey) {
+          setTurnstileSiteKey(data.turnstileSiteKey);
+        }
         if (!data.clientKey) {
           setSnapError("Midtrans configuration missing");
           return;
@@ -448,6 +466,10 @@ export default function App() {
       setError("Sistem pembayaran belum siap. Mohon tunggu sebentar.");
       return;
     }
+    if (!turnstileToken && turnstileSiteKey) {
+      setError("Menunggu verifikasi keamanan. Silakan coba lagi.");
+      return;
+    }
 
     snapEmbedInProgress.current = false;
     setPendingSnapToken(null);
@@ -460,7 +482,7 @@ export default function App() {
       const res = await fetch('/api/charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, grams: parseFloat(grams) }),
+        body: JSON.stringify({ amount, grams: parseFloat(grams), turnstileToken }),
       });
 
       const data = await res.json();
@@ -657,9 +679,15 @@ export default function App() {
                     </div>
                   )}
 
+                  {turnstileSiteKey && (
+                    <div className="flex justify-center mt-4">
+                      <Turnstile siteKey={turnstileSiteKey} onSuccess={setTurnstileToken} />
+                    </div>
+                  )}
+
                   <button
                     onClick={handleGenerateQR}
-                    disabled={loading || amount <= 0 || !snapReady || !pricing}
+                    disabled={loading || amount <= 0 || !snapReady || !pricing || (!!turnstileSiteKey && !turnstileToken)}
                     className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold text-lg py-5 rounded-xl shadow-xl shadow-[#e68a2e]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-wide border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
                   >
                     {loading ? (
@@ -759,7 +787,7 @@ export default function App() {
               )}
             </div>
           ) : (
-            <Dashboard onPayOrder={handlePayOrder} />
+            <Dashboard onPayOrder={handlePayOrder} turnstileSiteKey={turnstileSiteKey} />
           )}
         </div>
 
