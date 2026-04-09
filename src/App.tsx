@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, X, Hourglass } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -52,13 +52,11 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
     setOrderActionError(null);
     
     try {
-      // Call backend to create NEW order with fresh token
       const response = await fetch(`/api/continue-payment/${selectedOrder.orderId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       
-      // Check if response is JSON before parsing
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
@@ -76,7 +74,6 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
         throw new Error('No token received from server');
       }
       
-      // Close modal and switch to Pay tab with NEW order
       setShowOrderModal(false);
       onPayOrder(data.grams, data.amount, data.orderId, data.token);
       setSelectedOrder(null);
@@ -103,7 +100,6 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
       const data = await res.json();
       
       if (data.success) {
-        // Refresh history
         const historyRes = await fetch('/api/history');
         const historyData = await historyRes.json();
         setHistory(historyData);
@@ -126,48 +122,49 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
     setOrderActionError(null);
   };
 
-  if (loading) return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500" /></div>;
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-[#e68a2e]" /></div>;
 
   if (dbError) return (
     <div className="p-8 text-center">
-      <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-4">
-        <p className="font-medium">Database Not Configured</p>
+      <div className="bg-[#fce8e6] text-[#d93025] p-4 rounded-2xl mb-4 font-bold border-2 border-[#d93025]/20">
+        <p className="text-lg">Database Not Configured</p>
         <p className="text-sm mt-1">Please set DATABASE_URL in your secrets and run `npm run db:push`.</p>
       </div>
     </div>
   );
 
   return (
-    <div className="p-6 sm:p-8">
-      <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 mb-6">
-        <div className="flex items-center gap-3 text-amber-800 mb-2">
-          <Wallet className="w-5 h-5" />
-          <h3 className="font-medium">Total Revenue</h3>
+    <div className="p-6 sm:p-8 pt-2">
+      <div className="bg-[#fff8eb] rounded-[1.5rem] p-6 border-[3px] border-[#e6d5b8] shadow-sm mb-6 flex flex-col items-center justify-center text-center relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-2 bg-[#e68a2e]"></div>
+        <div className="flex items-center gap-3 text-[#e68a2e] mb-2 font-bold mt-2">
+          <Wallet className="w-6 h-6" />
+          <h3 className="uppercase tracking-widest text-sm">Total Pendapatan</h3>
         </div>
-        <p className="text-3xl font-bold text-amber-900">Rp {balance.toLocaleString('id-ID')}</p>
+        <p className="text-4xl font-extrabold text-[#3b2313] tracking-tight">Rp {balance.toLocaleString('id-ID')}</p>
       </div>
 
-      <h3 className="font-medium text-stone-800 mb-4 flex items-center gap-2">
-        <History className="w-5 h-5" /> Recent Orders
+      <h3 className="font-bold text-[#825e43] mb-4 flex items-center gap-2 uppercase tracking-wider text-sm">
+        <History className="w-5 h-5 text-[#e68a2e]" /> Riwayat Pesanan
       </h3>
-      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
         {history.length === 0 ? (
-          <p className="text-stone-500 text-sm text-center py-4">No orders yet</p>
+          <p className="text-[#825e43] text-sm text-center py-8 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">Belum ada pesanan</p>
         ) : (
           history.map(order => (
             <div 
               key={order.id} 
               onClick={() => handleOrderClick(order)}
-              className="bg-white border border-stone-200 rounded-xl p-4 flex justify-between items-center cursor-pointer hover:bg-stone-50 hover:border-stone-300 transition-all"
+              className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4 flex justify-between items-center cursor-pointer hover:border-[#e68a2e] hover:shadow-md transition-all group"
             >
               <div>
-                <p className="font-medium text-stone-800">Rp {order.amount.toLocaleString('id-ID')}</p>
-                <p className="text-xs text-stone-500">{order.grams}g Coffee • {new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="font-extrabold text-[#3b2313] text-lg group-hover:text-[#e68a2e] transition-colors">Rp {order.amount.toLocaleString('id-ID')}</p>
+                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g Kopi • {new Date(order.createdAt).toLocaleDateString()}</p>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                order.status === 'settlement' || order.status === 'capture' ? 'bg-green-100 text-green-700' :
-                order.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                'bg-red-100 text-red-700'
+              <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
+                order.status === 'settlement' || order.status === 'capture' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
+                order.status === 'pending' ? 'bg-[#fef7e0] text-[#e68a2e]' :
+                'bg-[#fce8e6] text-[#d93025]'
               }`}>
                 {order.status}
               </span>
@@ -180,121 +177,117 @@ function Dashboard({ onPayOrder }: { onPayOrder?: (grams: string, amount: number
       {showOrderModal && selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
-            className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#4a2e1b]/80 backdrop-blur-sm transition-opacity"
             onClick={handleCloseOrderModal}
           />
           
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-[#fff8eb] rounded-[2rem] shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto border-[4px] border-[#e6d5b8]">
             
-            {/* Status Icon */}
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 ${
               selectedOrder.status === 'settlement' || selectedOrder.status === 'capture' 
-                ? 'bg-green-100' 
+                ? 'bg-[#e6f4ea] border-[#1e8e3e]/20 text-[#1e8e3e]' 
                 : selectedOrder.status === 'pending'
-                ? 'bg-amber-100'
-                : 'bg-red-100'
+                ? 'bg-[#fef7e0] border-[#e68a2e]/20 text-[#e68a2e]'
+                : 'bg-[#fce8e6] border-[#d93025]/20 text-[#d93025]'
             }`}>
               {selectedOrder.status === 'settlement' || selectedOrder.status === 'capture' ? (
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
+                <CheckCircle2 className="w-10 h-10" />
               ) : selectedOrder.status === 'pending' ? (
-                <Hourglass className="w-8 h-8 text-amber-600" />
+                <Hourglass className="w-10 h-10" />
               ) : (
-                <XCircle className="w-8 h-8 text-red-600" />
+                <XCircle className="w-10 h-10" />
               )}
             </div>
                 
-                <h3 className="text-xl font-bold text-stone-800 text-center mb-4">
-                  Order Details
-                </h3>
-                
-                {/* Details Grid */}
-                <div className="space-y-3 mb-6 bg-stone-50 rounded-xl p-4">
-                  <div className="flex justify-between">
-                    <span className="text-stone-500">Amount</span>
-                    <span className="font-semibold text-stone-800">
-                      Rp {selectedOrder.amount.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-stone-500">Coffee</span>
-                    <span className="font-semibold text-stone-800">
-                      {selectedOrder.grams}g
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-stone-500">Date</span>
-                    <span className="font-semibold text-stone-800 text-xs">
-                      {new Date(selectedOrder.createdAt).toLocaleString('id-ID')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-stone-500">Status</span>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      selectedOrder.status === 'settlement' || selectedOrder.status === 'capture' 
-                        ? 'bg-green-100 text-green-700' 
-                        : selectedOrder.status === 'pending'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {selectedOrder.status}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Error Message */}
-                {orderActionError && (
-                  <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 text-center">
-                    {orderActionError}
-                  </div>
-                )}
-                
-                {/* Action Buttons - Only for pending orders */}
-                {selectedOrder.status === 'pending' ? (
-                  <div className="space-y-3 mb-4">
-                    <button
-                      onClick={handlePayNow}
-                      disabled={regeneratingToken}
-                      className="w-full bg-stone-900 hover:bg-stone-800 text-white font-medium py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {regeneratingToken ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Creating New Payment...
-                        </>
-                      ) : (
-                        <>
-                          <QrCode className="w-5 h-5" />
-                          Pay in Pay Tab
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={handleCancelFromModal}
-                      disabled={cancellingOrder || regeneratingToken}
-                      className="w-full bg-red-100 hover:bg-red-200 text-red-700 font-medium py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {cancellingOrder ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Cancelling...
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4" />
-                          Cancel Order
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : null}
-                
-                {/* Close Button */}
+            <h3 className="text-2xl font-extrabold text-[#3b2313] text-center mb-6 uppercase tracking-wide">
+              Detail Pesanan
+            </h3>
+            
+            <div className="space-y-3 mb-6 bg-white rounded-2xl p-5 border-2 border-[#e6d5b8]">
+              <div className="flex justify-between items-center">
+                <span className="text-[#825e43] font-bold text-sm uppercase">Total</span>
+                <span className="font-extrabold text-[#3b2313] text-xl">
+                  Rp {selectedOrder.amount.toLocaleString('id-ID')}
+                </span>
+              </div>
+              <div className="w-full h-px bg-[#e6d5b8] my-2"></div>
+              <div className="flex justify-between">
+                <span className="text-[#825e43] font-bold">Kopi</span>
+                <span className="font-bold text-[#3b2313]">
+                  {selectedOrder.grams}g
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#825e43] font-bold">Tanggal</span>
+                <span className="font-bold text-[#3b2313] text-xs mt-1">
+                  {new Date(selectedOrder.createdAt).toLocaleString('id-ID')}
+                </span>
+              </div>
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-[#e6d5b8]/50">
+                <span className="text-[#825e43] font-bold">Status</span>
+                <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
+                  selectedOrder.status === 'settlement' || selectedOrder.status === 'capture' 
+                    ? 'bg-[#e6f4ea] text-[#1e8e3e]' 
+                    : selectedOrder.status === 'pending'
+                    ? 'bg-[#fef7e0] text-[#e68a2e]'
+                    : 'bg-[#fce8e6] text-[#d93025]'
+                }`}>
+                  {selectedOrder.status}
+                </span>
+              </div>
+            </div>
+            
+            {orderActionError && (
+              <div className="bg-[#fce8e6] text-[#d93025] p-3 rounded-xl font-bold text-sm mb-4 text-center border-2 border-[#d93025]/20">
+                {orderActionError}
+              </div>
+            )}
+            
+            {selectedOrder.status === 'pending' ? (
+              <div className="space-y-3 mb-4">
                 <button
-                  onClick={handleCloseOrderModal}
-                  className="w-full bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium py-3 rounded-xl transition-all"
+                  onClick={handlePayNow}
+                  disabled={regeneratingToken}
+                  className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold py-4 rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wide"
                 >
-                  Close
+                  {regeneratingToken ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Memproses...
+                    </>
+                  ) : (
+                    <>
+                      <QrCode className="w-5 h-5" />
+                      Bayar Sekarang
+                    </>
+                  )}
                 </button>
+                <button
+                  onClick={handleCancelFromModal}
+                  disabled={cancellingOrder || regeneratingToken}
+                  className="w-full bg-white border-2 border-[#d93025] hover:bg-[#fce8e6] text-[#d93025] font-bold py-4 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 uppercase tracking-wide"
+                >
+                  {cancellingOrder ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Membatalkan...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-5 h-5" />
+                      Batal Pesanan
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : null}
+            
+            <button
+              onClick={handleCloseOrderModal}
+              className="w-full bg-[#e6d5b8]/30 hover:bg-[#e6d5b8] text-[#825e43] font-bold py-4 rounded-xl transition-all uppercase tracking-wide"
+            >
+              Tutup
+            </button>
           </div>
         </div>
       )}
@@ -312,72 +305,54 @@ export default function App() {
   const [snapReady, setSnapReady] = useState(false);
   const [snapError, setSnapError] = useState<string | null>(null);
   
-  // Pricing state
   const [pricing, setPricing] = useState<{ pricePer250g: number; pricePerGram: number } | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   
-  // Payment tab cancel modal states
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const amount = grams && pricing ? Math.round(parseFloat(grams) * pricing.pricePerGram) : 0;
 
-  // Pending order from dashboard (for continuing payment)
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingSnapToken, setPendingSnapToken] = useState<string | null>(null);
   const snapEmbedInProgress = useRef(false);
 
-  // Handle paying an order from dashboard - switches to pay tab and shows snap embed
   const handlePayOrder = (orderGrams: string, orderAmount: number, orderId: string, snapToken: string) => {
-    // First clear any existing snap embed
     if (window.snap && typeof window.snap.hide === 'function') {
-      try {
-        window.snap.hide();
-      } catch (e) {
-        console.log('Snap hide error (expected):', e);
-      }
+      try { window.snap.hide(); } catch (e) { console.log('Snap hide error (expected):', e); }
     }
     
-    // Clear the snap container
     const container = document.getElementById('snap-container');
-    if (container) {
-      container.innerHTML = '';
-    }
+    if (container) container.innerHTML = '';
     
     setActiveTab('pay');
     setGrams(orderGrams);
     setOrderId(orderId);
     setPendingOrderId(orderId);
-    setPendingSnapToken(null); // Clear first to reset
+    setPendingSnapToken(null);
     setStatus('pending');
     setError(null);
     
-    // Set the new token after a short delay to ensure cleanup
     setTimeout(() => {
       setPendingSnapToken(snapToken);
     }, 50);
   };
 
-  // Auto-embed snap when there's a pending order from dashboard
   useEffect(() => {
     if (pendingSnapToken && snapReady && activeTab === 'pay' && window.snap && !snapEmbedInProgress.current) {
-      snapEmbedInProgress.current = true; // Mark as in progress
-      
-      // Small delay to ensure DOM is ready and previous snap is cleared
+      snapEmbedInProgress.current = true; 
       setTimeout(() => {
         const container = document.getElementById('snap-container');
         if (container && snapEmbedInProgress.current) {
-          // Clear any previous content
           container.innerHTML = '';
-          
           try {
             window.snap.embed(pendingSnapToken, {
               embedId: 'snap-container',
               onSuccess: function(result: any) {
                 snapEmbedInProgress.current = false;
                 setStatus('settlement');
-                setPendingSnapToken(null); // Clear pending token
+                setPendingSnapToken(null);
               },
               onPending: function(result: any) {
                 setStatus('pending');
@@ -386,24 +361,22 @@ export default function App() {
                 snapEmbedInProgress.current = false;
                 setStatus('cancel');
                 setError('Payment failed: ' + (result.status_message || 'Unknown error'));
-                setPendingSnapToken(null); // Clear on error
+                setPendingSnapToken(null);
               },
               onClose: function() {
                 snapEmbedInProgress.current = false;
-                // User closed the snap UI
               }
             });
           } catch (err: any) {
             snapEmbedInProgress.current = false;
             console.error('Snap embed error:', err);
-            // If snap is already used, show error and clear
             if (err?.message?.includes('Invalid state transition')) {
               setError('This payment link has already been used. Please go back to dashboard and try again with a fresh order.');
               setPendingSnapToken(null);
             }
           }
         }
-      }, 200); // Increased delay to 200ms for better cleanup
+      }, 200); 
     }
   }, [pendingSnapToken, snapReady, activeTab]);
 
@@ -412,19 +385,13 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (!data.clientKey) {
-          console.warn("Midtrans Client Key is missing");
           setSnapError("Midtrans configuration missing");
           return;
         }
-        
-        // Check if script already exists
         if (document.getElementById('midtrans-snap-script')) {
-          if (window.snap) {
-            setSnapReady(true);
-          }
+          if (window.snap) setSnapReady(true);
           return;
         }
-        
         const script = document.createElement('script');
         script.id = 'midtrans-snap-script';
         script.src = data.isProduction 
@@ -432,24 +399,11 @@ export default function App() {
           : 'https://app.sandbox.midtrans.com/snap/snap.js';
         script.setAttribute('data-client-key', data.clientKey);
         script.async = true;
-        
-        script.onload = () => {
-          console.log('Midtrans Snap script loaded successfully');
-          setSnapReady(true);
-          setSnapError(null);
-        };
-        
-        script.onerror = () => {
-          console.error('Failed to load Midtrans Snap script');
-          setSnapError('Failed to load payment system');
-        };
-        
+        script.onload = () => { setSnapReady(true); setSnapError(null); };
+        script.onerror = () => { setSnapError('Failed to load payment system'); };
         document.body.appendChild(script);
       })
-      .catch(err => {
-        console.error("Failed to load config", err);
-        setSnapError('Failed to load configuration');
-      });
+      .catch(err => setSnapError('Failed to load configuration'));
   }, []);
 
   useEffect(() => {
@@ -457,20 +411,13 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.pricePer250g && data.pricePerGram) {
-          setPricing({
-            pricePer250g: data.pricePer250g,
-            pricePerGram: data.pricePerGram
-          });
+          setPricing({ pricePer250g: data.pricePer250g, pricePerGram: data.pricePerGram });
           setPricingError(null);
         } else {
-          console.error("Invalid pricing data received:", data);
           setPricingError("Failed to load pricing configuration");
         }
       })
-      .catch(err => {
-        console.error("Failed to load pricing", err);
-        setPricingError("Failed to load pricing");
-      });
+      .catch(err => setPricingError("Failed to load pricing"));
   }, []);
 
   useEffect(() => {
@@ -482,15 +429,11 @@ export default function App() {
           const data = await res.json();
           if (data.status) {
             setStatus(data.status);
-            if (data.status === 'settlement' || data.status === 'capture') {
-              clearInterval(interval);
-            } else if (data.status === 'expire' || data.status === 'cancel' || data.status === 'deny') {
+            if (['settlement', 'capture', 'expire', 'cancel', 'deny'].includes(data.status)) {
               clearInterval(interval);
             }
           }
-        } catch (err) {
-          console.error("Failed to fetch status", err);
-        }
+        } catch (err) {}
       }, 3000);
     }
     return () => clearInterval(interval);
@@ -498,20 +441,16 @@ export default function App() {
 
   const handleGenerateQR = async () => {
     if (!grams || parseFloat(grams) <= 0) {
-      setError("Please enter a valid amount of grams.");
+      setError("Masukkan jumlah gramasi yang valid.");
       return;
     }
-
     if (!snapReady) {
-      setError("Payment system is still loading. Please wait a moment and try again.");
+      setError("Sistem pembayaran belum siap. Mohon tunggu sebentar.");
       return;
     }
 
-    // Reset snap embed tracking
     snapEmbedInProgress.current = false;
-    // Clear any pending dashboard order
     setPendingSnapToken(null);
-    
     setLoading(true);
     setError(null);
     setOrderId(null);
@@ -520,48 +459,34 @@ export default function App() {
     try {
       const res = await fetch('/api/charge', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount, grams: parseFloat(grams) }),
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate transaction');
-      }
+      if (!res.ok) throw new Error(data.error || 'Gagal membuat transaksi');
 
       setOrderId(data.orderId);
       setStatus(data.status);
 
-      // Small delay to ensure DOM is ready
       setTimeout(() => {
         if (window.snap) {
           try {
-            // Use embed instead of pay for a seamless in-page experience
             window.snap.embed(data.token, {
               embedId: 'snap-container',
-              onSuccess: function(result: any) {
-                setStatus('settlement');
-              },
-              onPending: function(result: any) {
-                setStatus('pending');
-              },
-              onError: function(result: any) {
+              onSuccess: () => setStatus('settlement'),
+              onPending: () => setStatus('pending'),
+              onError: (result: any) => {
                 setStatus('cancel');
                 setError('Payment failed: ' + (result.status_message || 'Unknown error'));
               },
-              onClose: function() {
-                // User closed the embedded UI or it was unmounted
-              }
+              onClose: () => {}
             });
           } catch (err: any) {
-            console.error('Snap embed error:', err);
-            setError('Failed to initialize payment interface. Please refresh and try again.');
+            setError('Gagal memuat interface pembayaran. Coba refresh halaman.');
           }
         } else {
-          setError('Payment system not available. Please refresh the page.');
+          setError('Sistem pembayaran tidak tersedia. Coba refresh halaman.');
         }
       }, 100);
     } catch (err: any) {
@@ -572,12 +497,8 @@ export default function App() {
   };
 
   const resetPayment = () => {
-    // Clean up snap embed if it exists
     const snapContainer = document.getElementById('snap-container');
-    if (snapContainer) {
-      snapContainer.innerHTML = '';
-    }
-    // Reset tracking refs and states
+    if (snapContainer) snapContainer.innerHTML = '';
     snapEmbedInProgress.current = false;
     setPendingSnapToken(null);
     setGrams('');
@@ -586,7 +507,6 @@ export default function App() {
     setError(null);
   };
 
-  // Cancel modal handlers
   const handleCancelClick = () => {
     setShowCancelModal(true);
     setCancelError(null);
@@ -594,7 +514,6 @@ export default function App() {
 
   const handleConfirmCancel = async () => {
     if (!orderId) return;
-    
     setCancelling(true);
     setCancelError(null);
     
@@ -603,22 +522,20 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
       const data = await res.json();
       
       if (data.success) {
         setShowCancelModal(false);
         setStatus('cancel');
-        // Clear snap container and reset tracking
         const snapContainer = document.getElementById('snap-container');
         if (snapContainer) snapContainer.innerHTML = '';
         snapEmbedInProgress.current = false;
         setPendingSnapToken(null);
       } else {
-        setCancelError(data.message || 'Failed to cancel payment');
+        setCancelError(data.message || 'Gagal membatalkan transaksi');
       }
     } catch (err) {
-      setCancelError('Network error. Please try again.');
+      setCancelError('Error jaringan. Coba lagi.');
     } finally {
       setCancelling(false);
     }
@@ -633,230 +550,256 @@ export default function App() {
   const isFailed = status === 'expire' || status === 'cancel' || status === 'deny';
 
   return (
-    <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4 font-sans text-stone-800">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-stone-200">
-        <div className="bg-stone-900 p-6 text-white text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
-              <path d="M0,0 L100,0 L100,100 L0,100 Z" fill="url(#pattern)" />
-              <defs>
-                <pattern id="pattern" width="10" height="10" patternUnits="userSpaceOnUse">
-                  <circle cx="2" cy="2" r="1" fill="currentColor" />
-                </pattern>
-              </defs>
-            </svg>
-          </div>
-          <Coffee className="w-12 h-12 mx-auto mb-3 text-amber-400 relative z-10" />
-          <h1 className="text-2xl font-bold tracking-tight relative z-10">Honesty Bar</h1>
-          <p className="text-stone-400 text-sm mt-1 relative z-10">Self-Service Coffee Payment</p>
-        </div>
-
-        <div className="flex border-b border-stone-200">
-          <button
-            onClick={() => setActiveTab('pay')}
-            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'pay' ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50' : 'text-stone-500 hover:text-stone-700 bg-stone-50'}`}
-          >
-            <QrCode className="w-4 h-4" /> Pay
-          </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === 'dashboard' ? 'text-amber-600 border-b-2 border-amber-500 bg-amber-50/50' : 'text-stone-500 hover:text-stone-700 bg-stone-50'}`}
-          >
-            <LayoutDashboard className="w-4 h-4" /> Dashboard
-          </button>
-        </div>
-
-        {activeTab === 'pay' ? (
-          <div className="p-6 sm:p-8">
-            {!orderId && !isSuccess && (
-              <div className="space-y-6">
-              <div>
-                <label htmlFor="grams" className="block text-sm font-medium text-stone-600 mb-2">
-                  Coffee Used (grams)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    id="grams"
-                    min="0"
-                    step="0.1"
-                    value={grams}
-                    onChange={(e) => setGrams(e.target.value)}
-                    className="w-full text-3xl font-bold text-stone-800 bg-stone-50 border-2 border-stone-200 rounded-xl py-4 px-4 pr-16 focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/20 transition-all"
-                    placeholder="0"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 font-medium">
-                    g
-                  </span>
-                </div>
-                <p className="text-xs text-stone-400 mt-2 text-right">
-                  Rate: Rp {pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
-                </p>
-              </div>
-
-              <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex items-center justify-between">
-                <span className="text-amber-800 font-medium">Total to Pay</span>
-                <span className="text-2xl font-bold text-amber-900">
-                  Rp {amount.toLocaleString('id-ID')}
-                </span>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2">
-                  <XCircle className="w-5 h-5 shrink-0" />
-                  <p>{error}</p>
-                </div>
-              )}
-
-              {pricingError && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2">
-                  <XCircle className="w-5 h-5 shrink-0" />
-                  <p>Pricing configuration unavailable: {pricingError}</p>
-                </div>
-              )}
-
-              {snapError && (
-                <div className="bg-amber-50 text-amber-700 p-3 rounded-lg text-sm flex items-start gap-2">
-                  <XCircle className="w-5 h-5 shrink-0" />
-                  <p>Payment system unavailable: {snapError}</p>
-                </div>
-              )}
-
-              <button
-                onClick={handleGenerateQR}
-                disabled={loading || amount <= 0 || !snapReady || !pricing}
-                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-medium py-4 rounded-xl shadow-lg shadow-stone-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Generating QRIS...
-                  </>
-                ) : !pricing ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Loading Pricing...
-                  </>
-                ) : !snapReady ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Loading Payment System...
-                  </>
-                ) : (
-                  <>
-                    <QrCode className="w-5 h-5" />
-                    Pay with QRIS
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {orderId && !isSuccess && !isFailed && (
-            <div className="flex flex-col items-center space-y-6 animate-in fade-in zoom-in duration-300">
-              <div className="text-center">
-                <h2 className="text-xl font-bold text-stone-800">Complete Payment</h2>
-                <p className="text-stone-500 text-sm mt-1">Rp {amount.toLocaleString('id-ID')}</p>
-              </div>
-              
-              <div className="w-full bg-white rounded-2xl shadow-sm border-2 border-stone-100 overflow-hidden">
-                {/* This is where the Midtrans Snap UI will be embedded */}
-                <div id="snap-container" className="w-full min-h-[400px] flex items-center justify-center">
-                  {!snapReady && (
-                    <div className="text-center py-8">
-                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500 mb-2" />
-                      <p className="text-stone-500 text-sm">Loading payment interface...</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <button
-                onClick={handleCancelClick}
-                className="text-stone-500 hover:text-stone-800 text-sm font-medium transition-colors"
-              >
-                Cancel Payment
-              </button>
-            </div>
-          )}
-
-          {isSuccess && (
-            <div className="flex flex-col items-center space-y-6 animate-in fade-in zoom-in duration-300 py-4">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-2">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-stone-800">Payment Successful!</h2>
-                <p className="text-stone-500 mt-2">Thank you for your honesty.</p>
-                <p className="text-lg font-medium text-stone-800 mt-1">Rp {amount.toLocaleString('id-ID')}</p>
-              </div>
-              <button
-                onClick={resetPayment}
-                className="w-full bg-stone-100 hover:bg-stone-200 text-stone-800 font-medium py-4 rounded-xl transition-all flex items-center justify-center gap-2 mt-4"
-              >
-                <RefreshCw className="w-5 h-5" />
-                New Payment
-              </button>
-            </div>
-          )}
-
-          {isFailed && (
-            <div className="flex flex-col items-center space-y-6 animate-in fade-in zoom-in duration-300 py-4">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-600 mb-2">
-                <XCircle className="w-10 h-10" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-stone-800">Payment Failed</h2>
-                <p className="text-stone-500 mt-2">The transaction expired or was cancelled.</p>
-              </div>
-              <button
-                onClick={resetPayment}
-                className="w-full bg-stone-900 hover:bg-stone-800 text-white font-medium py-4 rounded-xl transition-all flex items-center justify-center gap-2 mt-4"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-          </div>
-        ) : (
-          <Dashboard onPayOrder={handlePayOrder} />
-        )}
+    <div className="min-h-screen bg-[#4a2e1b] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-[#3b2313] relative overflow-hidden">
+      
+      {/* Decorative Elements matching poster style */}
+      <div className="absolute top-10 left-10 opacity-20 text-[#e68a2e] animate-float pointer-events-none">
+        <Coffee className="w-24 h-24" />
+      </div>
+      <div className="absolute bottom-20 right-10 opacity-20 text-[#e68a2e] animate-float-delayed pointer-events-none">
+        <Coffee className="w-32 h-32" />
       </div>
 
-      {/* Payment Tab Cancel Confirmation Modal */}
+      <div className="max-w-md w-full relative z-10 space-y-4">
+        
+        {/* Header matching poster style */}
+        <div className="text-center space-y-2 mb-2 mt-4">
+          <h2 className="text-xl font-extrabold text-[#fdf4e3] uppercase tracking-wider">Patungan</h2>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#fdf4e3] uppercase tracking-widest leading-tight">
+            Minum Kopi
+          </h1>
+          <div className="mt-6 mb-4 inline-block bg-[#e68a2e] text-white px-6 py-2 rounded-full font-bold text-sm uppercase tracking-wider shadow-lg border border-[#e68a2e]/50 shadow-[#e68a2e]/40">
+            Biar bisa nambah alat kopi!
+          </div>
+        </div>
+
+        {/* Main App Container */}
+        <div className="bg-[#fff8eb] rounded-[2rem] shadow-2xl overflow-hidden border-b-8 border-[#e6d5b8]">
+          
+          {/* Tabs */}
+          <div className="flex bg-[#f7ede1] p-2 m-4 rounded-2xl gap-2 shadow-inner border border-[#e6d5b8]/50">
+            <button
+              onClick={() => setActiveTab('pay')}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'pay' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+            >
+              <QrCode className="w-5 h-5" /> Bayar
+            </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'dashboard' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+            >
+              <LayoutDashboard className="w-5 h-5" /> Dasbor
+            </button>
+          </div>
+
+          {activeTab === 'pay' ? (
+            <div className="p-6 sm:p-8 pt-2">
+              {!orderId && !isSuccess && (
+                <div className="space-y-6">
+                  
+                  <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm relative overflow-hidden group hover:border-[#e68a2e]/50 transition-colors">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#f7ede1] rounded-bl-full -z-0 opacity-50 pointer-events-none transition-transform group-hover:scale-110"></div>
+                    
+                    <div className="relative z-10">
+                      <label htmlFor="grams" className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
+                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> 
+                        Input Gramasi
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          id="grams"
+                          min="0"
+                          step="0.1"
+                          value={grams}
+                          onChange={(e) => setGrams(e.target.value)}
+                          className="w-full text-4xl font-extrabold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-4 px-4 pr-16 focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all text-center placeholder:text-[#dcbfa6]"
+                          placeholder="0"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#825e43] font-bold text-xl">
+                          g
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-[#825e43] mt-3 text-center bg-[#f7ede1] py-2 rounded-lg uppercase tracking-wide">
+                        Harga: Rp {pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#f7ede1] rounded-2xl p-5 border-2 border-[#e6d5b8] flex items-center justify-between shadow-inner">
+                    <div className="flex items-center gap-2 text-[#825e43] font-extrabold uppercase tracking-wide text-sm">
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
+                      Total Bayar
+                    </div>
+                    <span className="text-3xl font-extrabold text-[#e68a2e]">
+                      Rp {amount.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+
+                  {error && (
+                    <div className="bg-[#fce8e6] text-[#d93025] p-4 rounded-xl font-bold text-sm flex items-start gap-2 border-2 border-[#d93025]/20">
+                      <XCircle className="w-5 h-5 shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  {pricingError && (
+                    <div className="bg-[#fce8e6] text-[#d93025] p-4 rounded-xl font-bold text-sm flex items-start gap-2 border-2 border-[#d93025]/20">
+                      <XCircle className="w-5 h-5 shrink-0" />
+                      <p>Error Harga: {pricingError}</p>
+                    </div>
+                  )}
+
+                  {snapError && (
+                    <div className="bg-[#fef7e0] text-[#e68a2e] p-4 rounded-xl font-bold text-sm flex items-start gap-2 border-2 border-[#e68a2e]/20">
+                      <XCircle className="w-5 h-5 shrink-0" />
+                      <p>Error Sistem: {snapError}</p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleGenerateQR}
+                    disabled={loading || amount <= 0 || !snapReady || !pricing}
+                    className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold text-lg py-5 rounded-xl shadow-xl shadow-[#e68a2e]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-wide border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Proses...
+                      </>
+                    ) : !pricing ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Loading Harga...
+                      </>
+                    ) : !snapReady ? (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Loading Sistem...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-6 h-6" />
+                        Bayar
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {orderId && !isSuccess && !isFailed && (
+                <div className="flex flex-col items-center space-y-4 animate-in fade-in zoom-in duration-300">
+                  <div className="text-center bg-[#f7ede1] px-6 py-3 rounded-2xl border-2 border-[#e6d5b8] w-full">
+                    <h2 className="text-sm font-extrabold text-[#825e43] uppercase tracking-wide mb-1">Total Pembayaran</h2>
+                    <p className="text-3xl font-extrabold text-[#e68a2e]">Rp {amount.toLocaleString('id-ID')}</p>
+                  </div>
+                  
+                  <div className="w-full bg-white rounded-3xl shadow-sm border-[4px] border-[#e6d5b8] overflow-hidden relative">
+                    <div id="snap-container" className="w-full min-h-[400px] flex items-center justify-center bg-white">
+                      {!snapReady && (
+                        <div className="text-center py-8">
+                          <Loader2 className="w-10 h-10 animate-spin mx-auto text-[#e68a2e] mb-3" />
+                          <p className="text-[#825e43] text-sm font-extrabold uppercase tracking-widest">Loading Qris...</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCancelClick}
+                    className="text-[#825e43] hover:text-[#d93025] text-sm font-extrabold transition-colors uppercase tracking-widest border-b-2 border-transparent hover:border-[#d93025] pb-1 pt-2"
+                  >
+                    Batalkan Transaksi
+                  </button>
+                </div>
+              )}
+
+              {isSuccess && (
+                <div className="flex flex-col items-center space-y-6 animate-in fade-in zoom-in duration-500 py-6">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-[#1e8e3e] rounded-full animate-pulse-ring"></div>
+                    <div className="w-24 h-24 bg-[#1e8e3e] rounded-full flex items-center justify-center text-white relative z-10 shadow-xl shadow-[#1e8e3e]/30 border-[6px] border-[#fff8eb]">
+                      <CheckCircle2 className="w-12 h-12" />
+                    </div>
+                  </div>
+                  <div className="text-center space-y-3">
+                    <h2 className="text-3xl font-extrabold text-[#3b2313] uppercase tracking-widest">Berhasil!</h2>
+                    <div className="inline-block bg-[#f7ede1] px-5 py-3 rounded-2xl border-2 border-[#e6d5b8]">
+                      <p className="text-sm font-bold text-[#825e43] uppercase tracking-wide mb-1">Nominal Dibayar</p>
+                      <p className="text-2xl font-extrabold text-[#e68a2e]">Rp {amount.toLocaleString('id-ID')}</p>
+                    </div>
+                    <p className="text-[#825e43] font-bold text-lg mt-2 font-serif italic">Nikmati Kopi Anda!</p>
+                  </div>
+                  <button
+                    onClick={resetPayment}
+                    className="w-full bg-[#4a2e1b] hover:bg-[#3b2313] text-white font-extrabold py-4 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 uppercase tracking-wide shadow-lg border-b-[6px] border-[#2c1b10] active:border-b-0 active:translate-y-[6px]"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    Selesai
+                  </button>
+                </div>
+              )}
+
+              {isFailed && (
+                <div className="flex flex-col items-center space-y-6 animate-in fade-in zoom-in duration-300 py-6">
+                  <div className="w-24 h-24 bg-[#fce8e6] rounded-full flex items-center justify-center text-[#d93025] border-4 border-[#d93025]/20">
+                    <XCircle className="w-12 h-12" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-3xl font-extrabold text-[#3b2313] uppercase tracking-wide">Gagal</h2>
+                    <p className="text-[#825e43] font-bold">Transaksi dibatalkan atau kadaluarsa.</p>
+                  </div>
+                  <button
+                    onClick={resetPayment}
+                    className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold py-4 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 uppercase tracking-wide shadow-lg border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
+                  >
+                    Coba Lagi
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Dashboard onPayOrder={handlePayOrder} />
+          )}
+        </div>
+
+        <div className="text-center pt-4 opacity-50 font-bold text-[#fdf4e3] uppercase tracking-widest text-sm flex items-center justify-center gap-2">
+          <Coffee className="w-4 h-4" /> Kopi Kita
+        </div>
+      </div>
+
+      {/* Cancel Confirmation Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
-            className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm transition-opacity"
+            className="absolute inset-0 bg-[#4a2e1b]/80 backdrop-blur-sm transition-opacity"
             onClick={handleCloseCancelModal}
           />
           
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-8 h-8 text-amber-600" />
+          <div className="relative bg-[#fff8eb] rounded-[2rem] shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border-[4px] border-[#e6d5b8]">
+            <div className="w-20 h-20 bg-[#fef7e0] rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-[#e68a2e]/20">
+              <XCircle className="w-10 h-10 text-[#e68a2e]" />
             </div>
             
-            <h3 className="text-xl font-bold text-stone-800 text-center mb-2">
-              Cancel Payment?
+            <h3 className="text-2xl font-extrabold text-[#3b2313] text-center mb-2 uppercase tracking-wide">
+              Batal Transaksi?
             </h3>
             
-            <div className="text-center mb-4">
-              <p className="text-lg font-semibold text-stone-800">
+            <div className="text-center mb-6 bg-white p-4 rounded-2xl border-2 border-[#e6d5b8]">
+              <p className="text-[#825e43] font-bold text-sm uppercase mb-1">Total</p>
+              <p className="text-2xl font-extrabold text-[#e68a2e]">
                 Rp {amount.toLocaleString('id-ID')}
-              </p>
-              <p className="text-sm text-stone-500">
-                Order: {orderId?.slice(0, 20)}...
               </p>
             </div>
             
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 mb-6">
-              <p className="text-xs text-amber-700 text-center">
-                This action cannot be undone. The transaction will be permanently cancelled.
+            <div className="bg-[#fce8e6] border-2 border-[#d93025]/20 rounded-xl p-4 mb-6">
+              <p className="text-xs font-bold text-[#d93025] text-center uppercase tracking-wide">
+                Tindakan ini tidak dapat dibatalkan.
               </p>
             </div>
             
             {cancelError && (
-              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 text-center">
+              <div className="bg-[#fce8e6] text-[#d93025] p-3 rounded-xl text-sm mb-4 font-bold text-center">
                 {cancelError}
               </div>
             )}
@@ -865,22 +808,19 @@ export default function App() {
               <button
                 onClick={handleCloseCancelModal}
                 disabled={cancelling}
-                className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium py-3 rounded-xl transition-all disabled:opacity-50"
+                className="flex-1 bg-white border-2 border-[#e6d5b8] hover:bg-[#f7ede1] text-[#825e43] font-extrabold py-3 rounded-xl transition-all disabled:opacity-50 uppercase tracking-wide"
               >
-                No, Keep It
+                Kembali
               </button>
               <button
                 onClick={handleConfirmCancel}
                 disabled={cancelling}
-                className="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 bg-[#d93025] hover:bg-[#b3261e] text-white font-extrabold py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 uppercase tracking-wide shadow-lg"
               >
                 {cancelling ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Cancelling...
-                  </>
+                  <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  'Yes, Cancel'
+                  'Ya, Batal'
                 )}
               </button>
             </div>
