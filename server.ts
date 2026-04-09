@@ -9,18 +9,55 @@ import { eq, desc, sql } from "drizzle-orm";
 
 dotenv.config();
 
+async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean> {
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+  if (!secretKey) {
+    // If no secret key is configured, assume Turnstile is disabled and let it pass
+    console.warn("Turnstile secret key not configured, skipping verification");
+    return true;
+  }
+  
+  if (!token) return false;
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append('secret', secretKey);
+    formData.append('response', token);
+    if (ip) formData.append('remoteip', ip);
+
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error("Turnstile verification error:", error);
+    return false;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Trust proxy if you are behind a reverse proxy (like Nginx/Cloudflare) to get the correct IP
+  app.set('trust proxy', 1);
   app.use(express.json());
 
   // API Routes
   app.get("/api/config", (req, res) => {
-    res.json({
+    const config: any = {
       clientKey: (process.env.MIDTRANS_CLIENT_KEY || "").trim(),
-      isProduction: process.env.MIDTRANS_IS_PRODUCTION === "true"
-    });
+      isProduction: process.env.MIDTRANS_IS_PRODUCTION === "true",
+    };
+    
+    if (process.env.TURNSTILE_SITE_KEY) {
+      config.turnstileSiteKey = process.env.TURNSTILE_SITE_KEY.trim();
+    }
+    
+    res.json(config);
   });
 
   // Pricing endpoint - fetches from database or uses default
@@ -59,10 +96,16 @@ async function startServer() {
 
   app.post("/api/charge", async (req, res) => {
     try {
-      const { amount, grams } = req.body;
+      const { amount, grams, turnstileToken } = req.body;
 
       if (!amount || amount <= 0) {
         return res.status(400).json({ error: "Invalid amount" });
+      }
+
+      // Verify Turnstile token
+      const isTurnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
+      if (!isTurnstileValid) {
+        return res.status(400).json({ error: "Invalid Turnstile token" });
       }
 
       const serverKey = (process.env.MIDTRANS_SERVER_KEY || "").trim();
@@ -251,7 +294,14 @@ async function startServer() {
     
     try {
       const { orderId } = req.params;
+      const { turnstileToken } = req.body;
       
+      // Verify Turnstile token
+      const isTurnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
+      if (!isTurnstileValid) {
+        return res.status(400).json({ error: "Invalid Turnstile token" });
+      }
+
       if (!db) {
         console.log("[Continue Payment] Database not configured");
         return res.status(503).json({ error: "Database not configured" });
