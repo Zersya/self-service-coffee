@@ -361,6 +361,7 @@ export default function App() {
           try {
             window.snap.embed(pendingSnapToken, {
               embedId: 'snap-container',
+              uiMode: 'qr',
               onSuccess: function(result: any) {
                 snapEmbedInProgress.current = false;
                 setStatus('settlement');
@@ -496,6 +497,7 @@ export default function App() {
           try {
             window.snap.embed(data.token, {
               embedId: 'snap-container',
+              uiMode: 'qr',
               onSuccess: () => setStatus('settlement'),
               onPending: () => setStatus('pending'),
               onError: (result: any) => {
