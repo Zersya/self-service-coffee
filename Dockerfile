@@ -26,8 +26,8 @@ RUN apk add --no-cache wget
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install production dependencies AND tsx (needed to run TypeScript)
-RUN npm ci --omit=dev && npm install tsx
+# Install production dependencies (tsx is now in dependencies for production)
+RUN npm ci --omit=dev
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
