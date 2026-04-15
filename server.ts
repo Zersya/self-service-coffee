@@ -257,8 +257,9 @@ async function startServer() {
 
       const data = await response.json();
 
-      // 200 = success, 412 = transaction already expired/cancelled
-      if (data.status_code === "200" || data.status_code === "412") {
+      // 200 = success, 412 = transaction already expired/cancelled, 404 = transaction doesn't exist in Midtrans yet
+      // For 404, we still cancel it locally since it means user never clicked the payment link
+      if (data.status_code === "200" || data.status_code === "412" || data.status_code === "404") {
         const newStatus = "cancel";
         
         if (db) {
@@ -269,6 +270,11 @@ async function startServer() {
           } catch (e) {
             console.error("DB Update Error in cancel:", e);
           }
+        }
+
+        // Log for debugging
+        if (data.status_code === "404") {
+          console.log(`[Cancel] Order ${orderId} was not found in Midtrans (404), cancelling locally`);
         }
 
         return res.json({ 
