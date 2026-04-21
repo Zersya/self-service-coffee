@@ -374,12 +374,16 @@ async function startServer() {
 
       // Insert NEW order into database with fresh token
       console.log("[Continue Payment] Inserting new order into database...");
+      const mdrFee = Math.round(oldOrder.amount * 0.007);
+      const netAmount = oldOrder.amount - mdrFee;
       await db.insert(orders).values({
         orderId: newOrderId,
         amount: oldOrder.amount,
         grams: oldOrder.grams,
         status: "pending",
-        snapToken: data.token
+        snapToken: data.token,
+        mdrFee: mdrFee,
+        netAmount: netAmount,
       });
 
       // Mark the old order as replaced
