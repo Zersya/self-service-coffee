@@ -372,6 +372,10 @@ async function startServer() {
         return res.status(400).json({ error: `Midtrans Error: ${data.error_messages.join(', ')}` });
       }
 
+      // Calculate MDR fee (0.7% of amount) and net amount
+      const mdrFee = Math.round(oldOrder.amount * 0.007);
+      const netAmount = oldOrder.amount - mdrFee;
+
       // Insert NEW order into database with fresh token
       console.log("[Continue Payment] Inserting new order into database...");
       await db.insert(orders).values({
@@ -379,7 +383,9 @@ async function startServer() {
         amount: oldOrder.amount,
         grams: oldOrder.grams,
         status: "pending",
-        snapToken: data.token
+        snapToken: data.token,
+        mdrFee,
+        netAmount,
       });
 
       // Mark the old order as replaced
@@ -531,44 +537,41 @@ async function startServer() {
         return res.status(400).json({ error: `Cannot approve ${request.status} request` });
       }
       
-      // Calculate available balance (same logic as /api/balance)
-      const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
-      const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
-      
-      const mdrResult = await db.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
-      const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
-      
-      const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
-      const totalDisbursed = disbursedResult[0]?.total ? parseInt(disbursedResult[0].total as string, 10) : 0;
-      
-      const withdrawalFeeResult = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
-      const totalWithdrawalFees = withdrawalFeeResult[0]?.total ? parseInt(withdrawalFeeResult[0].total as string, 10) : 0;
-      
-      const netIncome = totalIncome - totalMdrFees;
-      const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
-      
-      // Check if there's enough balance (need to cover both amount + withdrawal fee)
-      const totalNeeded = request.amount + request.withdrawalFee;
-      
-      if (totalNeeded > availableBalance) {
-        return res.status(400).json({ 
-          error: "Insufficient balance", 
-          availableBalance,
-          requestedAmount: request.amount,
-          withdrawalFee: request.withdrawalFee,
-          totalNeeded,
-        });
-      }
-      
-      // Update status to approved
-      const result = await db.update(disbursements)
-        .set({ 
-          status: "approved", 
-          processedAt: new Date(),
-          processedBy: processedBy?.trim() || 'admin'
-        })
-        .where(eq(disbursements.requestId, requestId))
-        .returning();
+      // Wrap balance check and update in a transaction for atomicity
+      const result = await db.transaction(async (tx) => {
+        // Calculate available balance (same logic as /api/balance)
+        const incomeResult = await tx.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+        const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
+        
+        const mdrResult = await tx.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+        const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
+        
+        const disbursedResult = await tx.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
+        const totalDisbursed = disbursedResult[0]?.total ? parseInt(disbursedResult[0].total as string, 10) : 0;
+        
+        const withdrawalFeeResult = await tx.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
+        const totalWithdrawalFees = withdrawalFeeResult[0]?.total ? parseInt(withdrawalFeeResult[0].total as string, 10) : 0;
+        
+        const netIncome = totalIncome - totalMdrFees;
+        const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
+        
+        // Check if there's enough balance (need to cover both amount + withdrawal fee)
+        const totalNeeded = request.amount + request.withdrawalFee;
+        
+        if (totalNeeded > availableBalance) {
+          throw { type: 'INSUFFICIENT_BALANCE', availableBalance, requestedAmount: request.amount, withdrawalFee: request.withdrawalFee, totalNeeded };
+        }
+        
+        // Update status to approved
+        return await tx.update(disbursements)
+          .set({ 
+            status: "approved", 
+            processedAt: new Date(),
+            processedBy: processedBy?.trim() || 'admin'
+          })
+          .where(eq(disbursements.requestId, requestId))
+          .returning();
+      });
       
       res.json({
         success: true,
@@ -576,6 +579,15 @@ async function startServer() {
         message: "Disbursement approved successfully"
       });
     } catch (e) {
+      if ((e as any)?.type === 'INSUFFICIENT_BALANCE') {
+        return res.status(400).json({ 
+          error: "Insufficient balance", 
+          availableBalance: e.availableBalance,
+          requestedAmount: e.requestedAmount,
+          withdrawalFee: e.withdrawalFee,
+          totalNeeded: e.totalNeeded,
+        });
+      }
       console.error("Approve Disbursement Error:", e);
       res.status(500).json({ error: "Failed to approve disbursement" });
     }

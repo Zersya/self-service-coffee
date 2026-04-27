@@ -695,11 +695,11 @@ function DisbursementManager({ onClose, turnstileSiteKey }: { onClose: () => voi
               <div className="bg-[#fef7e0] rounded-lg p-2 mb-3 text-xs">
                 <div className="flex justify-between font-bold text-[#825e43]">
                   <span>Biaya Withdrawal:</span>
-                  <span>Rp {(disb.withdrawalFee || 5000).toLocaleString('id-ID')}</span>
+                  <span>Rp {(disb.withdrawalFee ?? 5000).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between font-bold text-[#3b2313] border-t border-[#e6d5b8] pt-1 mt-1">
                   <span>Diterima Bersih:</span>
-                  <span className="text-[#e68a2e]">Rp {(disb.netAmount || disb.amount - 5000).toLocaleString('id-ID')}</span>
+                  <span className="text-[#e68a2e]">Rp {(disb.netAmount ?? disb.amount - 5000).toLocaleString('id-ID')}</span>
                 </div>
               </div>
               
