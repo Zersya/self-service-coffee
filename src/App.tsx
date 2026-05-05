@@ -815,8 +815,11 @@ export default function App() {
         if (data.beans && data.beans.length > 0) {
           setBeans(data.beans);
           if (!selectedBeanSlug) {
-            setSelectedBeanSlug(data.beans[0].slug);
+            const firstActive = data.beans.find((b: any) => b.isActive) || data.beans[0];
+            setSelectedBeanSlug(firstActive.slug);
           }
+        } else if (data.beans && data.beans.length === 0 && !selectedBeanSlug) {
+          setSelectedBeanSlug(null);
         }
       })
       .catch(err => setPricingError("Failed to load pricing"));

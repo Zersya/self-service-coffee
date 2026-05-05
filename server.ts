@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
 import { beans, orders, configs, disbursements } from "./src/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 dotenv.config();
 
@@ -259,7 +259,7 @@ async function startServer() {
         }
 
         try {
-          activeBeansList = await db.select().from(beans).orderBy(desc(beans.createdAt));
+          activeBeansList = await db.select().from(beans).where(eq(beans.isActive, true)).orderBy(desc(beans.createdAt));
         } catch (dbError) {
           console.error("Database error fetching beans:", dbError);
         }
@@ -281,20 +281,40 @@ async function startServer() {
 
   app.post("/api/charge", async (req, res) => {
     try {
-      const { amount, grams, beanSlug, turnstileToken } = req.body;
+      const { amount: clientAmount, grams: rawGrams, beanSlug, turnstileToken } = req.body;
 
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ error: "Invalid amount" });
+      const grams = parseFloat(rawGrams);
+      if (isNaN(grams) || grams <= 0 || grams > 100000) {
+        return res.status(400).json({ error: "Invalid grams value" });
       }
 
-      if (beanSlug && db) {
-        try {
-          const beanExists = await db.select().from(beans).where(eq(beans.slug, beanSlug)).limit(1);
-          if (beanExists.length === 0) {
-            return res.status(400).json({ error: "Invalid bean selection" });
-          }
-        } catch (e) {
-          console.error("Bean validation error:", e);
+      if (!db) {
+        return res.status(503).json({ error: "Database not configured" });
+      }
+
+      if (!beanSlug) {
+        return res.status(400).json({ error: "Bean selection is required" });
+      }
+
+      let expectedAmount: number;
+
+      try {
+        const bean = await db.select().from(beans).where(
+          and(eq(beans.slug, beanSlug), eq(beans.isActive, true))
+        ).limit(1);
+        if (bean.length === 0) {
+          return res.status(400).json({ error: "Invalid or unavailable bean selection" });
+        }
+        expectedAmount = Math.round(grams * bean[0].pricePer250g / 250);
+      } catch (e) {
+        console.error("Bean lookup error:", e);
+        return res.status(503).json({ error: "Service unavailable. Please try again." });
+      }
+
+      if (clientAmount !== undefined && clientAmount !== null) {
+        if (Math.round(clientAmount) !== expectedAmount) {
+          console.warn(`Amount mismatch: client sent ${Math.round(clientAmount)}, expected ${expectedAmount}`);
+          return res.status(400).json({ error: "Amount mismatch. Please refresh and try again." });
         }
       }
 
@@ -327,7 +347,7 @@ async function startServer() {
         body: JSON.stringify({
           transaction_details: {
             order_id: orderId,
-            gross_amount: Math.round(amount),
+            gross_amount: expectedAmount,
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
           custom_field1: `Coffee: ${grams}g`,
@@ -344,13 +364,12 @@ async function startServer() {
 
       if (db) {
         try {
-          // Calculate MDR fee (0.7% of amount) and net amount
-          const mdrFee = Math.round(amount * 0.007);
-          const netAmount = amount - mdrFee;
+          const mdrFee = Math.round(expectedAmount * 0.007);
+          const netAmount = expectedAmount - mdrFee;
 
           await db.insert(orders).values({
             orderId,
-            amount: Math.round(amount),
+            amount: expectedAmount,
             grams: grams.toString(),
             beanSlug: beanSlug || null,
             status: "pending",
@@ -367,7 +386,7 @@ async function startServer() {
         orderId,
         token: data.token,
         redirectUrl: data.redirect_url,
-        amount: Math.round(amount),
+        amount: expectedAmount,
         status: "pending",
       });
     } catch (error) {
