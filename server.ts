@@ -720,8 +720,8 @@ async function startServer() {
     }
   });
 
-  // Approve a disbursement request
-  app.post("/api/disbursements/:requestId/approve", async (req, res) => {
+  // Approve a disbursement request (admin only)
+  app.post("/api/disbursements/:requestId/approve", adminAuthMiddleware, async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     
     try {
@@ -789,8 +789,8 @@ async function startServer() {
     }
   });
 
-  // Reject a disbursement request
-  app.post("/api/disbursements/:requestId/reject", async (req, res) => {
+  // Reject a disbursement request (admin only)
+  app.post("/api/disbursements/:requestId/reject", adminAuthMiddleware, async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     
     try {

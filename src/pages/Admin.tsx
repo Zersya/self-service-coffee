@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, LayoutDashboard, ArrowLeft } from 'lucide-react';
+import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, LayoutDashboard, ArrowLeft, ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('admin_token'));
@@ -22,8 +22,16 @@ export default function Admin() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [disbursements, setDisbursements] = useState<any[]>([]);
+  const [disbursementsLoading, setDisbursementsLoading] = useState(false);
+  const [disbursementAction, setDisbursementAction] = useState<string | null>(null);
+
   useEffect(() => {
     if (token) fetchBeans();
+  }, [token]);
+
+  useEffect(() => {
+    if (token) fetchDisbursements();
   }, [token]);
 
   const fetchBeans = async () => {
@@ -168,6 +176,49 @@ export default function Admin() {
     setFormName(name);
     if (!editingBean) {
       setFormSlug(autoGenerateSlug(name));
+    }
+  };
+
+  const fetchDisbursements = async () => {
+    setDisbursementsLoading(true);
+    try {
+      const res = await fetch('/api/disbursements');
+      const data = await res.json();
+      if (res.ok) setDisbursements(data);
+    } catch {} finally {
+      setDisbursementsLoading(false);
+    }
+  };
+
+  const handleApprove = async (requestId: string) => {
+    setDisbursementAction(requestId);
+    try {
+      const res = await fetch(`/api/disbursements/${requestId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDisbursements(disbursements.map(d => d.requestId === requestId ? data.disbursement : d));
+      }
+    } catch {} finally {
+      setDisbursementAction(null);
+    }
+  };
+
+  const handleReject = async (requestId: string) => {
+    setDisbursementAction(requestId);
+    try {
+      const res = await fetch(`/api/disbursements/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDisbursements(disbursements.map(d => d.requestId === requestId ? data.disbursement : d));
+      }
+    } catch {} finally {
+      setDisbursementAction(null);
     }
   };
 
@@ -337,6 +388,102 @@ export default function Admin() {
                 ))}
               </div>
             )}
+
+            {/* Disbursement Section */}
+            <div className="mt-8 pt-8 border-t-2 border-[#e6d5b8]">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-extrabold text-[#825e43] uppercase tracking-wider text-sm flex items-center gap-2">
+                  <ArrowLeftRight className="w-4 h-4 text-[#e68a2e]" />
+                  Permintaan Pencairan
+                </h2>
+              </div>
+
+              {disbursementsLoading ? (
+                <div className="py-8 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#e68a2e]" />
+                </div>
+              ) : disbursements.length === 0 ? (
+                <p className="text-[#825e43] text-sm text-center py-6 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">
+                  Belum ada permintaan pencairan
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  {disbursements.map((disb) => (
+                    <div
+                      key={disb.requestId}
+                      className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-extrabold text-[#3b2313] text-lg">
+                            Rp {disb.amount.toLocaleString('id-ID')}
+                          </p>
+                          <p className="text-xs font-bold text-[#825e43] mt-1">
+                            {disb.requestedBy} • {new Date(disb.requestedAt).toLocaleDateString('id-ID')}
+                          </p>
+                        </div>
+                        <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
+                          disb.status === 'approved' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
+                          disb.status === 'rejected' ? 'bg-[#fce8e6] text-[#d93025]' :
+                          disb.status === 'cancelled' ? 'bg-[#e6d5b8] text-[#825e43]' :
+                          'bg-[#fef7e0] text-[#e68a2e]'
+                        }`}>
+                          {disb.status}
+                        </span>
+                      </div>
+
+                      <p className="text-sm font-bold text-[#3b2313] mb-2 bg-[#f7ede1] p-2 rounded-lg">
+                        {disb.description}
+                      </p>
+
+                      <div className="bg-[#fef7e0] rounded-lg p-2 mb-3 text-xs">
+                        <div className="flex justify-between font-bold text-[#825e43]">
+                          <span>Biaya Withdrawal:</span>
+                          <span>Rp {(disb.withdrawalFee || 5000).toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-[#3b2313] border-t border-[#e6d5b8] pt-1 mt-1">
+                          <span>Diterima Bersih:</span>
+                          <span className="text-[#e68a2e]">Rp {(disb.netAmount || disb.amount - 5000).toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+
+                      {disb.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleApprove(disb.requestId)}
+                            disabled={disbursementAction === disb.requestId}
+                            className="flex-1 bg-[#e6f4ea] hover:bg-[#1e8e3e] text-[#1e8e3e] hover:text-white font-bold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1"
+                          >
+                            {disbursementAction === disb.requestId ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <><CheckCircle2 className="w-4 h-4" /> Setuju</>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleReject(disb.requestId)}
+                            disabled={disbursementAction === disb.requestId}
+                            className="flex-1 bg-[#fce8e6] hover:bg-[#d93025] text-[#d93025] hover:text-white font-bold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1"
+                          >
+                            {disbursementAction === disb.requestId ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <><XCircle className="w-4 h-4" /> Tolak</>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {disb.status !== 'pending' && disb.processedAt && (
+                        <p className="text-[10px] text-[#825e43] font-bold mt-2 uppercase tracking-wide">
+                          Diproses: {new Date(disb.processedAt).toLocaleDateString('id-ID')} oleh {disb.processedBy}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

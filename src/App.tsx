@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
@@ -448,62 +448,6 @@ function DisbursementManager({ onClose, turnstileSiteKey }: { onClose: () => voi
     }
   };
 
-  const handleApprove = async (requestId: string) => {
-    setActionLoading(requestId);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/disbursements/${requestId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processedBy: 'admin' })
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setDisbursements(disbursements.map(d => 
-          d.requestId === requestId ? data.disbursement : d
-        ));
-        setSuccessMessage('Permintaan disetujui');
-        setTimeout(() => setSuccessMessage(null), 3000);
-      } else {
-        setError(data.error || 'Gagal menyetujui');
-      }
-    } catch (err) {
-      setError('Error jaringan. Coba lagi.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleReject = async (requestId: string) => {
-    setActionLoading(requestId);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/disbursements/${requestId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processedBy: 'admin' })
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setDisbursements(disbursements.map(d => 
-          d.requestId === requestId ? data.disbursement : d
-        ));
-        setSuccessMessage('Permintaan ditolak');
-        setTimeout(() => setSuccessMessage(null), 3000);
-      } else {
-        setError(data.error || 'Gagal menolak');
-      }
-    } catch (err) {
-      setError('Error jaringan. Coba lagi.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleCancel = async (requestId: string) => {
     setActionLoading(requestId);
     setError(null);
@@ -704,38 +648,17 @@ function DisbursementManager({ onClose, turnstileSiteKey }: { onClose: () => voi
               </div>
               
               {disb.status === 'pending' && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleApprove(disb.requestId)}
-                    disabled={actionLoading === disb.requestId}
-                    className="flex-1 bg-[#e6f4ea] hover:bg-[#1e8e3e] text-[#1e8e3e] hover:text-white font-bold py-2 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1"
-                  >
-                    {actionLoading === disb.requestId ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <><Check className="w-4 h-4" /> Setuju</>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleReject(disb.requestId)}
-                    disabled={actionLoading === disb.requestId}
-                    className="flex-1 bg-[#fce8e6] hover:bg-[#d93025] text-[#d93025] hover:text-white font-bold py-2 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1"
-                  >
-                    {actionLoading === disb.requestId ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <><XCircle className="w-4 h-4" /> Tolak</>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleCancel(disb.requestId)}
-                    disabled={actionLoading === disb.requestId}
-                    className="px-3 bg-[#e6d5b8] hover:bg-[#825e43] text-[#825e43] hover:text-white rounded-lg transition-all disabled:opacity-50"
-                    title="Batalkan"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleCancel(disb.requestId)}
+                  disabled={actionLoading === disb.requestId}
+                  className="w-full bg-[#fce8e6] hover:bg-[#d93025] text-[#d93025] hover:text-white font-bold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {actionLoading === disb.requestId ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <><XCircle className="w-4 h-4" /> Batalkan Permintaan</>
+                  )}
+                </button>
               )}
               
               {disb.status !== 'pending' && disb.processedAt && (
