@@ -648,8 +648,8 @@ async function startServer() {
       const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
       const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
       
-      // Calculate total MDR fees from completed orders
-      const mdrResult = await db.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      // Calculate total MDR fees from completed orders (compute from amount for accuracy with pre-migration orders)
+      const mdrResult = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture')`);
       const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
       
       // Calculate total approved disbursements
@@ -762,7 +762,7 @@ async function startServer() {
       const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
       const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
       
-      const mdrResult = await db.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const mdrResult = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture')`);
       const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
       
       const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
