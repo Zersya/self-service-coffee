@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null }) {
+function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null, beans?: any[] }) {
   const [history, setHistory] = useState<any[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -166,7 +166,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
             >
               <div>
                 <p className="font-extrabold text-[#3b2313] text-lg group-hover:text-[#e68a2e] transition-colors">Rp {order.amount.toLocaleString('id-ID')}</p>
-                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g Kopi • {new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g {beans?.find(b => b.slug === order.beanSlug)?.name || (order.beanSlug ? order.beanSlug : 'Kopi')} • {new Date(order.createdAt).toLocaleDateString()}</p>
               </div>
               <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
                 order.status === 'settlement' || order.status === 'capture' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
@@ -221,7 +221,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
               <div className="flex justify-between">
                 <span className="text-[#825e43] font-bold">Kopi</span>
                 <span className="font-bold text-[#3b2313]">
-                  {selectedOrder.grams}g
+                  {selectedOrder.grams}g {beans?.find(b => b.slug === selectedOrder.beanSlug)?.name || ''}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -319,12 +319,16 @@ export default function App() {
   
   const [pricing, setPricing] = useState<{ pricePer250g: number; pricePerGram: number } | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const [beans, setBeans] = useState<any[]>([]);
+  const [selectedBeanSlug, setSelectedBeanSlug] = useState<string | null>(null);
   
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const amount = grams && pricing ? Math.round(parseFloat(grams) * pricing.pricePerGram) : 0;
+  const selectedBean = beans.find(b => b.slug === selectedBeanSlug);
+  const activePricePer250g = selectedBean ? selectedBean.pricePer250g : (pricing?.pricePer250g || 100000);
+  const amount = grams && pricing ? Math.round(parseFloat(grams) * (activePricePer250g / 250)) : 0;
 
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingSnapToken, setPendingSnapToken] = useState<string | null>(null);
@@ -434,6 +438,12 @@ export default function App() {
         } else {
           setPricingError("Failed to load pricing configuration");
         }
+        if (data.beans && data.beans.length > 0) {
+          setBeans(data.beans);
+          if (!selectedBeanSlug) {
+            setSelectedBeanSlug(data.beans[0].slug);
+          }
+        }
       })
       .catch(err => setPricingError("Failed to load pricing"));
   }, []);
@@ -482,7 +492,7 @@ export default function App() {
       const res = await fetch('/api/charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, grams: parseFloat(grams), turnstileToken }),
+        body: JSON.stringify({ amount, grams: parseFloat(grams), beanSlug: selectedBeanSlug, turnstileToken }),
       });
 
       const data = await res.json();
@@ -619,12 +629,66 @@ export default function App() {
               {!orderId && !isSuccess && (
                 <div className="space-y-6">
                   
+                  {/* Step 1: Bean Selection */}
+                  <div className="bg-white rounded-2xl p-5 border-2 border-[#e6d5b8] shadow-sm">
+                    <label className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                      Pilih Biji Kopi
+                    </label>
+                    {beans.length === 0 ? (
+                      <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
+                        {!pricing ? 'Memuat...' : 'Belum ada biji kopi — hubungi admin'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {beans.filter(b => b.isActive).map(bean => (
+                          <button
+                            key={bean.slug}
+                            onClick={() => {
+                              setSelectedBeanSlug(bean.slug);
+                              setGrams('');
+                            }}
+                            className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                              selectedBeanSlug === bean.slug
+                                ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md'
+                                : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {bean.imageUrl ? (
+                                <img src={bean.imageUrl} alt={bean.name} className="w-12 h-12 rounded-lg object-cover border border-[#e6d5b8]" />
+                              ) : (
+                                <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-[#e6d5b8]">
+                                  <Coffee className="w-6 h-6 text-[#825e43]" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
+                                {bean.description && (
+                                  <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                                )}
+                                <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
+                                  Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                                </p>
+                              </div>
+                              {selectedBeanSlug === bean.slug && (
+                                <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm relative overflow-hidden group hover:border-[#e68a2e]/50 transition-colors">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-[#f7ede1] rounded-bl-full -z-0 opacity-50 pointer-events-none transition-transform group-hover:scale-110"></div>
                     
                     <div className="relative z-10">
                       <label htmlFor="grams" className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
-                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> 
+                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
                         Input Gramasi
                       </label>
                       <div className="relative">
@@ -643,14 +707,14 @@ export default function App() {
                         </span>
                       </div>
                       <p className="text-xs font-bold text-[#825e43] mt-3 text-center bg-[#f7ede1] py-2 rounded-lg uppercase tracking-wide">
-                        Harga: Rp {pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
+                        Harga: Rp {selectedBean ? selectedBean.pricePer250g.toLocaleString('id-ID') : pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
                       </p>
                     </div>
                   </div>
 
                   <div className="bg-[#f7ede1] rounded-2xl p-5 border-2 border-[#e6d5b8] flex items-center justify-between shadow-inner">
                     <div className="flex items-center gap-2 text-[#825e43] font-extrabold uppercase tracking-wide text-sm">
-                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
                       Total Bayar
                     </div>
                     <span className="text-3xl font-extrabold text-[#e68a2e]">
@@ -687,7 +751,7 @@ export default function App() {
 
                   <button
                     onClick={handleGenerateQR}
-                    disabled={loading || amount <= 0 || !snapReady || !pricing || (!!turnstileSiteKey && !turnstileToken)}
+                    disabled={loading || amount <= 0 || !snapReady || !pricing || !selectedBean || (!!turnstileSiteKey && !turnstileToken)}
                     className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold text-lg py-5 rounded-xl shadow-xl shadow-[#e68a2e]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-wide border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
                   >
                     {loading ? (
@@ -787,7 +851,7 @@ export default function App() {
               )}
             </div>
           ) : (
-            <Dashboard onPayOrder={handlePayOrder} turnstileSiteKey={turnstileSiteKey} />
+            <Dashboard onPayOrder={handlePayOrder} turnstileSiteKey={turnstileSiteKey} beans={beans} />
           )}
         </div>
 

@@ -1,10 +1,11 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
-import { orders, configs } from "./src/db/schema";
+import { beans, orders, configs } from "./src/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 
 dotenv.config();
@@ -38,6 +39,40 @@ async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean
   }
 }
 
+const adminTokens = new Map<string, { createdAt: number }>();
+const ADMIN_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function generateAdminToken(): string {
+  return crypto.randomUUID();
+}
+
+function adminAuthMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const token = authHeader.slice(7);
+  const session = adminTokens.get(token);
+  if (!session) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+  if (Date.now() - session.createdAt > ADMIN_TOKEN_EXPIRY_MS) {
+    adminTokens.delete(token);
+    return res.status(401).json({ error: "Token expired" });
+  }
+  next();
+}
+
+function cleanExpiredTokens() {
+  const now = Date.now();
+  for (const [token, session] of adminTokens.entries()) {
+    if (now - session.createdAt > ADMIN_TOKEN_EXPIRY_MS) {
+      adminTokens.delete(token);
+    }
+  }
+}
+setInterval(cleanExpiredTokens, 60 * 60 * 1000);
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -45,6 +80,25 @@ async function startServer() {
   // Trust proxy if you are behind a reverse proxy (like Nginx/Cloudflare) to get the correct IP
   app.set('trust proxy', 1);
   app.use(express.json());
+
+  // Seed default bean if none exist
+  if (db) {
+    try {
+      const existingBeans = await db.select().from(beans).limit(1);
+      if (existingBeans.length === 0) {
+        await db.insert(beans).values({
+          name: 'Default Coffee',
+          slug: 'default-coffee',
+          description: 'Biji kopi pilihan untuk kebutuhan kantor sehari-hari',
+          pricePer250g: 100000,
+          isActive: true,
+        });
+        console.log("Seeded default bean");
+      }
+    } catch (e) {
+      console.log("Bean seeding skipped (table may not exist yet)");
+    }
+  }
 
   // API Routes
   app.get("/api/config", (req, res) => {
@@ -60,12 +114,136 @@ async function startServer() {
     res.json(config);
   });
 
+  // Admin login
+  app.post("/api/admin/login", (req, res) => {
+    const { email, password } = req.body;
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminPassword) {
+      return res.status(500).json({ error: "Admin credentials not configured" });
+    }
+
+    if (email !== adminEmail || password !== adminPassword) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = generateAdminToken();
+    adminTokens.set(token, { createdAt: Date.now() });
+
+    res.json({ token });
+  });
+
+  // Admin verify token
+  app.get("/api/admin/verify", adminAuthMiddleware, (req, res) => {
+    res.json({ valid: true });
+  });
+
+  // Admin: List all beans
+  app.get("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const allBeans = await db.select().from(beans).orderBy(desc(beans.createdAt));
+      res.json(allBeans);
+    } catch (e) {
+      console.error("Admin beans list error:", e);
+      res.status(500).json({ error: "Failed to fetch beans" });
+    }
+  });
+
+  // Admin: Create bean
+  app.post("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const { name, slug, description, imageUrl, pricePer250g } = req.body;
+      if (!name || !slug) {
+        return res.status(400).json({ error: "Name and slug are required" });
+      }
+      const result = await db.insert(beans).values({
+        name,
+        slug,
+        description: description || null,
+        imageUrl: imageUrl || null,
+        pricePer250g: pricePer250g || 100000,
+      }).returning();
+      res.json(result[0]);
+    } catch (e: any) {
+      console.error("Admin create bean error:", e);
+      if (e?.code === '23505') {
+        return res.status(400).json({ error: "A bean with this slug already exists" });
+      }
+      res.status(500).json({ error: "Failed to create bean" });
+    }
+  });
+
+  // Admin: Update bean
+  app.put("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
+      const { name, slug, description, imageUrl, pricePer250g, isActive } = req.body;
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (slug !== undefined) updateData.slug = slug;
+      if (description !== undefined) updateData.description = description;
+      if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+      if (pricePer250g !== undefined) updateData.pricePer250g = pricePer250g;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const result = await db.update(beans)
+        .set(updateData)
+        .where(eq(beans.id, id))
+        .returning();
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Bean not found" });
+      }
+      res.json(result[0]);
+    } catch (e: any) {
+      console.error("Admin update bean error:", e);
+      res.status(500).json({ error: "Failed to update bean" });
+    }
+  });
+
+  // Admin: Delete bean (soft delete)
+  app.delete("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
+      const result = await db.update(beans)
+        .set({ isActive: false })
+        .where(eq(beans.id, id))
+        .returning();
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Bean not found" });
+      }
+      res.json({ success: true, bean: result[0] });
+    } catch (e) {
+      console.error("Admin delete bean error:", e);
+      res.status(500).json({ error: "Failed to delete bean" });
+    }
+  });
+
+  // Public: List active beans
+  app.get("/api/beans", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const activeBeans = await db.select().from(beans).where(eq(beans.isActive, true));
+      res.json(activeBeans);
+    } catch (e) {
+      console.error("Beans list error:", e);
+      res.status(500).json({ error: "Failed to fetch beans" });
+    }
+  });
+
   // Pricing endpoint - fetches from database or uses default
   app.get("/api/pricing", async (req, res) => {
     try {
       const DEFAULT_PRICE_PER_250G = 100000;
       
       let pricePer250g = DEFAULT_PRICE_PER_250G;
+      let activeBeansList: any[] = [];
       
       if (db) {
         try {
@@ -78,15 +256,22 @@ async function startServer() {
           }
         } catch (dbError) {
           console.error("Database error fetching pricing config:", dbError);
-          // Fall back to default on DB error
+        }
+
+        try {
+          activeBeansList = await db.select().from(beans).orderBy(desc(beans.createdAt));
+        } catch (dbError) {
+          console.error("Database error fetching beans:", dbError);
         }
       }
       
+      // If no beans exist yet, use config-based pricing as fallback
       const pricePerGram = pricePer250g / 250;
       
       res.json({
         pricePer250g,
-        pricePerGram
+        pricePerGram,
+        beans: activeBeansList
       });
     } catch (error) {
       console.error("Pricing endpoint error:", error);
@@ -96,10 +281,21 @@ async function startServer() {
 
   app.post("/api/charge", async (req, res) => {
     try {
-      const { amount, grams, turnstileToken } = req.body;
+      const { amount, grams, beanSlug, turnstileToken } = req.body;
 
       if (!amount || amount <= 0) {
         return res.status(400).json({ error: "Invalid amount" });
+      }
+
+      if (beanSlug && db) {
+        try {
+          const beanExists = await db.select().from(beans).where(eq(beans.slug, beanSlug)).limit(1);
+          if (beanExists.length === 0) {
+            return res.status(400).json({ error: "Invalid bean selection" });
+          }
+        } catch (e) {
+          console.error("Bean validation error:", e);
+        }
       }
 
       // Verify Turnstile token
@@ -152,8 +348,9 @@ async function startServer() {
             orderId,
             amount: Math.round(amount),
             grams: grams.toString(),
+            beanSlug: beanSlug || null,
             status: "pending",
-            snapToken: data.token // Store snap token for later use
+            snapToken: data.token
           });
         } catch (e) {
           console.error("DB Insert Error:", e);
@@ -378,6 +575,7 @@ async function startServer() {
         orderId: newOrderId,
         amount: oldOrder.amount,
         grams: oldOrder.grams,
+        beanSlug: oldOrder.beanSlug || null,
         status: "pending",
         snapToken: data.token
       });
