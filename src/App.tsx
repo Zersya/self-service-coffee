@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
@@ -8,9 +8,18 @@ declare global {
   }
 }
 
-function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null }) {
+function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null, beans?: any[] }) {
   const [history, setHistory] = useState<any[]>([]);
   const [balance, setBalance] = useState<number>(0);
+  const [balanceDetails, setBalanceDetails] = useState<{
+    balance: number;
+    totalIncome: number;
+    totalMdrFees: number;
+    netIncome: number;
+    totalDisbursed: number;
+    totalWithdrawalFees: number;
+    totalFees: number;
+  } | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -31,6 +40,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
         setDbError(balanceData.error || historyData.error);
       } else {
         setBalance(balanceData.balance);
+        setBalanceDetails(balanceData);
         setHistory(historyData);
       }
       setLoading(false);
@@ -146,9 +156,50 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
         <div className="absolute top-0 left-0 w-full h-2 bg-[#e68a2e]"></div>
         <div className="flex items-center gap-3 text-[#e68a2e] mb-2 font-bold mt-2">
           <Wallet className="w-6 h-6" />
-          <h3 className="uppercase tracking-widest text-sm">Total Pendapatan</h3>
+          <h3 className="uppercase tracking-widest text-sm">Saldo Tersedia</h3>
         </div>
         <p className="text-4xl font-extrabold text-[#3b2313] tracking-tight">Rp {balance.toLocaleString('id-ID')}</p>
+        
+        {balanceDetails && (
+          <div className="mt-4 w-full space-y-2">
+            {/* Income Breakdown */}
+            <div className="bg-white/50 rounded-xl p-3 text-xs">
+              <div className="flex justify-between font-bold text-[#825e43] mb-1">
+                <span>Total Pemasukan:</span>
+                <span>Rp {balanceDetails.totalIncome.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between font-bold text-[#d93025] text-[10px]">
+                <span>Biaya MDR (0.7%):</span>
+                <span>- Rp {balanceDetails.totalMdrFees.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between font-bold text-[#3b2313] border-t border-[#e6d5b8] pt-1 mt-1">
+                <span>Pemasukan Bersih:</span>
+                <span>Rp {balanceDetails.netIncome.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+            
+            {/* Disbursement Breakdown */}
+            {(balanceDetails.totalDisbursed > 0 || balanceDetails.totalWithdrawalFees > 0) && (
+              <div className="bg-white/50 rounded-xl p-3 text-xs">
+                <div className="flex justify-between font-bold text-[#825e43] mb-1">
+                  <span>Sudah Dicairkan:</span>
+                  <span>Rp {balanceDetails.totalDisbursed.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between font-bold text-[#d93025] text-[10px]">
+                  <span>Biaya Withdrawal (Rp 5.000×):</span>
+                  <span>- Rp {balanceDetails.totalWithdrawalFees.toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Total Fees */}
+            {balanceDetails.totalFees > 0 && (
+              <div className="text-[10px] font-bold text-[#825e43] bg-[#e6d5b8]/30 px-3 py-1.5 rounded-full">
+                Total Biaya: Rp {balanceDetails.totalFees.toLocaleString('id-ID')}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <h3 className="font-bold text-[#825e43] mb-4 flex items-center gap-2 uppercase tracking-wider text-sm">
@@ -166,7 +217,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
             >
               <div>
                 <p className="font-extrabold text-[#3b2313] text-lg group-hover:text-[#e68a2e] transition-colors">Rp {order.amount.toLocaleString('id-ID')}</p>
-                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g Kopi • {new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g {beans?.find(b => b.slug === order.beanSlug)?.name || (order.beanSlug ? order.beanSlug : 'Kopi')} • {new Date(order.createdAt).toLocaleDateString()}</p>
               </div>
               <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
                 order.status === 'settlement' || order.status === 'capture' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
@@ -221,7 +272,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
               <div className="flex justify-between">
                 <span className="text-[#825e43] font-bold">Kopi</span>
                 <span className="font-bold text-[#3b2313]">
-                  {selectedOrder.grams}g
+                  {selectedOrder.grams}g {beans?.find(b => b.slug === selectedOrder.beanSlug)?.name || ''}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -307,8 +358,331 @@ function Dashboard({ onPayOrder, turnstileSiteKey }: { onPayOrder?: (grams: stri
   );
 }
 
+// DisbursementManager component for handling withdrawal requests
+function DisbursementManager({ onClose, turnstileSiteKey }: { onClose: () => void, turnstileSiteKey?: string | null }) {
+  const [disbursements, setDisbursements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  
+  // Form states
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [requestedBy, setRequestedBy] = useState('');
+
+  // Calculate withdrawal fee and net amount
+  const withdrawalFee = 5000;
+  const netAmount = amount ? Math.max(0, parseInt(amount) - withdrawalFee) : 0;
+
+  useEffect(() => {
+    fetchDisbursements();
+  }, []);
+
+  const fetchDisbursements = async () => {
+    try {
+      const res = await fetch('/api/disbursements');
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setDisbursements(data);
+      }
+    } catch (err) {
+      setError('Failed to fetch disbursements');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!amount || parseInt(amount) <= 0) {
+      setError('Jumlah harus lebih dari 0');
+      return;
+    }
+    if (!description.trim()) {
+      setError('Deskripsi diperlukan');
+      return;
+    }
+    if (!turnstileToken && turnstileSiteKey) {
+      setError('Menunggu verifikasi keamanan. Silakan coba lagi.');
+      return;
+    }
+
+    setCreateLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/disbursements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: parseInt(amount),
+          description: description.trim(),
+          requestedBy: requestedBy.trim() || 'anonymous',
+          turnstileToken,
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setDisbursements([data.disbursement, ...disbursements]);
+        setShowCreateForm(false);
+        setAmount('');
+        setDescription('');
+        setRequestedBy('');
+        setTurnstileToken(null);
+        setSuccessMessage('Permintaan pencairan berhasil dibuat');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(data.error || 'Gagal membuat permintaan');
+      }
+    } catch (err) {
+      setError('Error jaringan. Coba lagi.');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleCancel = async (requestId: string) => {
+    setActionLoading(requestId);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/disbursements/${requestId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setDisbursements(disbursements.map(d => 
+          d.requestId === requestId ? data.disbursement : d
+        ));
+        setSuccessMessage('Permintaan dibatalkan');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(data.error || 'Gagal membatalkan');
+      }
+    } catch (err) {
+      setError('Error jaringan. Coba lagi.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  if (loading) return (
+    <div className="p-8 text-center">
+      <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#e68a2e]" />
+    </div>
+  );
+
+  return (
+    <div className="p-6 sm:p-8 pt-2">
+      {/* Fee Information */}
+      <div className="bg-[#e6f4ea]/30 border border-[#1e8e3e]/20 rounded-xl p-3 mb-4">
+        <p className="text-[10px] font-bold text-[#1e8e3e] uppercase tracking-wide mb-1">
+          Informasi Biaya
+        </p>
+        <ul className="text-[10px] text-[#825e43] font-bold space-y-1">
+          <li>• MDR (0.7%): Dipotong otomatis dari setiap pembayaran QRIS</li>
+          <li>• Withdrawal (Rp 5.000): Biaya transfer bank per pencairan</li>
+        </ul>
+      </div>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="font-bold text-[#825e43] flex items-center gap-2 uppercase tracking-wider text-sm">
+          <ArrowLeftRight className="w-5 h-5 text-[#e68a2e]" /> 
+          Permintaan Pencairan
+        </h3>
+        <button
+          onClick={() => setShowCreateForm(!showCreateForm)}
+          className="bg-[#e68a2e] hover:bg-[#c97a29] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          {showCreateForm ? 'Batal' : 'Buat Permintaan'}
+        </button>
+      </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-[#e6f4ea] text-[#1e8e3e] p-3 rounded-xl mb-4 font-bold text-sm text-center border-2 border-[#1e8e3e]/20">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-[#fce8e6] text-[#d93025] p-3 rounded-xl mb-4 font-bold text-sm text-center border-2 border-[#d93025]/20">
+          {error}
+        </div>
+      )}
+
+      {/* Create Form */}
+      {showCreateForm && (
+        <form onSubmit={handleCreate} className="bg-white rounded-2xl p-5 border-2 border-[#e6d5b8] mb-6 shadow-sm">
+          <h4 className="font-extrabold text-[#3b2313] mb-4 uppercase tracking-wide">Buat Permintaan Baru</h4>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-[#825e43] uppercase mb-2">Jumlah (Rp)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="50000"
+                className="w-full text-2xl font-extrabold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all text-center"
+              />
+              {amount && parseInt(amount) > 0 && (
+                <div className="mt-2 bg-[#fef7e0] rounded-lg p-2 text-xs">
+                  <div className="flex justify-between font-bold text-[#825e43]">
+                    <span>Jumlah Pengajuan:</span>
+                    <span>Rp {parseInt(amount).toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-[#d93025] text-[10px]">
+                    <span>Biaya Withdrawal:</span>
+                    <span>- Rp {withdrawalFee.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-[#3b2313] border-t border-[#e6d5b8] pt-1 mt-1">
+                    <span>Yang Diterima:</span>
+                    <span className="text-[#e68a2e]">Rp {netAmount.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div>
+              <label className="block text-xs font-bold text-[#825e43] uppercase mb-2">Deskripsi</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Alasan pencairan dana..."
+                rows={3}
+                className="w-full font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all resize-none"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs font-bold text-[#825e43] uppercase mb-2">Nama Pengaju (opsional)</label>
+              <input
+                type="text"
+                value={requestedBy}
+                onChange={(e) => setRequestedBy(e.target.value)}
+                placeholder="Nama Anda"
+                className="w-full font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all"
+              />
+            </div>
+
+            {/* Turnstile for bot protection */}
+            {turnstileSiteKey && (
+              <div className="flex justify-center pt-2">
+                <Turnstile siteKey={turnstileSiteKey} onSuccess={setTurnstileToken} />
+              </div>
+            )}
+          </div>
+          
+          <button
+            type="submit"
+            disabled={createLoading || (!!turnstileSiteKey && !turnstileToken)}
+            className="w-full mt-4 bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {createLoading ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Memproses...</>
+            ) : (
+              <><Plus className="w-5 h-5" /> Ajukan Permintaan</>
+            )}
+          </button>
+        </form>
+      )}
+
+      {/* Disbursements List */}
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+        {disbursements.length === 0 ? (
+          <p className="text-[#825e43] text-sm text-center py-8 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">
+            Belum ada permintaan pencairan
+          </p>
+        ) : (
+          disbursements.map((disb) => (
+            <div 
+              key={disb.requestId}
+              className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4 hover:border-[#e68a2e] transition-all"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-extrabold text-[#3b2313] text-lg">
+                    Rp {disb.amount.toLocaleString('id-ID')}
+                  </p>
+                  <p className="text-xs font-bold text-[#825e43] mt-1">
+                    {disb.requestedBy} • {new Date(disb.requestedAt).toLocaleDateString('id-ID')}
+                  </p>
+                </div>
+                <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
+                  disb.status === 'approved' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
+                  disb.status === 'rejected' ? 'bg-[#fce8e6] text-[#d93025]' :
+                  disb.status === 'cancelled' ? 'bg-[#e6d5b8] text-[#825e43]' :
+                  'bg-[#fef7e0] text-[#e68a2e]'
+                }`}>
+                  {disb.status}
+                </span>
+              </div>
+              
+              <p className="text-sm font-bold text-[#3b2313] mb-2 bg-[#f7ede1] p-2 rounded-lg">
+                {disb.description}
+              </p>
+              
+              {/* Fee breakdown */}
+              <div className="bg-[#fef7e0] rounded-lg p-2 mb-3 text-xs">
+                <div className="flex justify-between font-bold text-[#825e43]">
+                  <span>Biaya Withdrawal:</span>
+                  <span>Rp {(disb.withdrawalFee || 5000).toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between font-bold text-[#3b2313] border-t border-[#e6d5b8] pt-1 mt-1">
+                  <span>Diterima Bersih:</span>
+                  <span className="text-[#e68a2e]">Rp {(disb.netAmount || disb.amount - 5000).toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+              
+              {disb.status === 'pending' && (
+                <button
+                  onClick={() => handleCancel(disb.requestId)}
+                  disabled={actionLoading === disb.requestId}
+                  className="w-full bg-[#fce8e6] hover:bg-[#d93025] text-[#d93025] hover:text-white font-bold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {actionLoading === disb.requestId ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <><XCircle className="w-4 h-4" /> Batalkan Permintaan</>
+                  )}
+                </button>
+              )}
+              
+              {disb.status !== 'pending' && disb.processedAt && (
+                <p className="text-[10px] text-[#825e43] font-bold mt-2 uppercase tracking-wide">
+                  Diproses: {new Date(disb.processedAt).toLocaleDateString('id-ID')} oleh {disb.processedBy}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+      
+      <button
+        onClick={onClose}
+        className="w-full mt-6 bg-[#e6d5b8]/30 hover:bg-[#e6d5b8] text-[#825e43] font-bold py-4 rounded-xl transition-all uppercase tracking-wide"
+      >
+        Tutup
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'pay' | 'dashboard'>('pay');
+  const [activeTab, setActiveTab] = useState<'pay' | 'dashboard' | 'disbursement'>('pay');
   const [grams, setGrams] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -319,12 +693,16 @@ export default function App() {
   
   const [pricing, setPricing] = useState<{ pricePer250g: number; pricePerGram: number } | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const [beans, setBeans] = useState<any[]>([]);
+  const [selectedBeanSlug, setSelectedBeanSlug] = useState<string | null>(null);
   
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const amount = grams && pricing ? Math.round(parseFloat(grams) * pricing.pricePerGram) : 0;
+  const selectedBean = beans.find(b => b.slug === selectedBeanSlug);
+  const activePricePer250g = selectedBean ? selectedBean.pricePer250g : (pricing?.pricePer250g || 100000);
+  const amount = grams && pricing ? Math.round(parseFloat(grams) * (activePricePer250g / 250)) : 0;
 
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingSnapToken, setPendingSnapToken] = useState<string | null>(null);
@@ -435,6 +813,15 @@ export default function App() {
         } else {
           setPricingError("Failed to load pricing configuration");
         }
+        if (data.beans && data.beans.length > 0) {
+          setBeans(data.beans);
+          if (!selectedBeanSlug) {
+            const firstActive = data.beans.find((b: any) => b.isActive) || data.beans[0];
+            setSelectedBeanSlug(firstActive.slug);
+          }
+        } else if (data.beans && data.beans.length === 0 && !selectedBeanSlug) {
+          setSelectedBeanSlug(null);
+        }
       })
       .catch(err => setPricingError("Failed to load pricing"));
   }, []);
@@ -483,7 +870,7 @@ export default function App() {
       const res = await fetch('/api/charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, grams: parseFloat(grams), turnstileToken }),
+        body: JSON.stringify({ amount, grams: parseFloat(grams), beanSlug: selectedBeanSlug, turnstileToken }),
       });
 
       const data = await res.json();
@@ -614,19 +1001,81 @@ export default function App() {
             >
               <LayoutDashboard className="w-5 h-5" /> Dasbor
             </button>
+            <button
+              onClick={() => setActiveTab('disbursement')}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'disbursement' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+            >
+              <ArrowLeftRight className="w-5 h-5" /> Pencairan
+            </button>
           </div>
 
-          {activeTab === 'pay' ? (
+          {activeTab === 'disbursement' ? (
+            <DisbursementManager onClose={() => setActiveTab('dashboard')} turnstileSiteKey={turnstileSiteKey} />
+          ) : activeTab === 'pay' ? (
             <div className="p-6 sm:p-8 pt-2">
               {!orderId && !isSuccess && (
                 <div className="space-y-6">
                   
+                  {/* Step 1: Bean Selection */}
+                  <div className="bg-white rounded-2xl p-5 border-2 border-[#e6d5b8] shadow-sm">
+                    <label className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                      Pilih Biji Kopi
+                    </label>
+                    {beans.length === 0 ? (
+                      <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
+                        {!pricing ? 'Memuat...' : 'Belum ada biji kopi — hubungi admin'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {beans.filter(b => b.isActive).map(bean => (
+                          <button
+                            key={bean.slug}
+                            onClick={() => {
+                              setSelectedBeanSlug(bean.slug);
+                              setGrams('');
+                            }}
+                            className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                              selectedBeanSlug === bean.slug
+                                ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md'
+                                : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {bean.imageUrl ? (
+                                <img src={bean.imageUrl} alt={bean.name} className="w-12 h-12 rounded-lg object-cover border border-[#e6d5b8]" />
+                              ) : (
+                                <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-[#e6d5b8]">
+                                  <Coffee className="w-6 h-6 text-[#825e43]" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
+                                {bean.description && (
+                                  <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                                )}
+                                <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
+                                  Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                                </p>
+                              </div>
+                              {selectedBeanSlug === bean.slug && (
+                                <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm relative overflow-hidden group hover:border-[#e68a2e]/50 transition-colors">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-[#f7ede1] rounded-bl-full -z-0 opacity-50 pointer-events-none transition-transform group-hover:scale-110"></div>
                     
                     <div className="relative z-10">
                       <label htmlFor="grams" className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
-                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> 
+                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
                         Input Gramasi
                       </label>
                       <div className="relative">
@@ -645,14 +1094,14 @@ export default function App() {
                         </span>
                       </div>
                       <p className="text-xs font-bold text-[#825e43] mt-3 text-center bg-[#f7ede1] py-2 rounded-lg uppercase tracking-wide">
-                        Harga: Rp {pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
+                        Harga: Rp {selectedBean ? selectedBean.pricePer250g.toLocaleString('id-ID') : pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
                       </p>
                     </div>
                   </div>
 
                   <div className="bg-[#f7ede1] rounded-2xl p-5 border-2 border-[#e6d5b8] flex items-center justify-between shadow-inner">
                     <div className="flex items-center gap-2 text-[#825e43] font-extrabold uppercase tracking-wide text-sm">
-                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
                       Total Bayar
                     </div>
                     <span className="text-3xl font-extrabold text-[#e68a2e]">
@@ -689,7 +1138,7 @@ export default function App() {
 
                   <button
                     onClick={handleGenerateQR}
-                    disabled={loading || amount <= 0 || !snapReady || !pricing || (!!turnstileSiteKey && !turnstileToken)}
+                    disabled={loading || amount <= 0 || !snapReady || !pricing || !selectedBean || (!!turnstileSiteKey && !turnstileToken)}
                     className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold text-lg py-5 rounded-xl shadow-xl shadow-[#e68a2e]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-wide border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
                   >
                     {loading ? (
@@ -789,7 +1238,7 @@ export default function App() {
               )}
             </div>
           ) : (
-            <Dashboard onPayOrder={handlePayOrder} turnstileSiteKey={turnstileSiteKey} />
+            <Dashboard onPayOrder={handlePayOrder} turnstileSiteKey={turnstileSiteKey} beans={beans} />
           )}
         </div>
 

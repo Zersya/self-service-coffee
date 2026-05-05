@@ -1,11 +1,12 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
-import { orders, configs } from "./src/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { beans, orders, configs, disbursements } from "./src/db/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 dotenv.config();
 
@@ -38,6 +39,40 @@ async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean
   }
 }
 
+const adminTokens = new Map<string, { createdAt: number }>();
+const ADMIN_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function generateAdminToken(): string {
+  return crypto.randomUUID();
+}
+
+function adminAuthMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const token = authHeader.slice(7);
+  const session = adminTokens.get(token);
+  if (!session) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+  if (Date.now() - session.createdAt > ADMIN_TOKEN_EXPIRY_MS) {
+    adminTokens.delete(token);
+    return res.status(401).json({ error: "Token expired" });
+  }
+  next();
+}
+
+function cleanExpiredTokens() {
+  const now = Date.now();
+  for (const [token, session] of adminTokens.entries()) {
+    if (now - session.createdAt > ADMIN_TOKEN_EXPIRY_MS) {
+      adminTokens.delete(token);
+    }
+  }
+}
+setInterval(cleanExpiredTokens, 60 * 60 * 1000);
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -45,6 +80,25 @@ async function startServer() {
   // Trust proxy if you are behind a reverse proxy (like Nginx/Cloudflare) to get the correct IP
   app.set('trust proxy', 1);
   app.use(express.json());
+
+  // Seed default bean if none exist
+  if (db) {
+    try {
+      const existingBeans = await db.select().from(beans).limit(1);
+      if (existingBeans.length === 0) {
+        await db.insert(beans).values({
+          name: 'Default Coffee',
+          slug: 'default-coffee',
+          description: 'Biji kopi pilihan untuk kebutuhan kantor sehari-hari',
+          pricePer250g: 100000,
+          isActive: true,
+        });
+        console.log("Seeded default bean");
+      }
+    } catch (e) {
+      console.log("Bean seeding skipped (table may not exist yet)");
+    }
+  }
 
   // API Routes
   app.get("/api/config", (req, res) => {
@@ -60,12 +114,136 @@ async function startServer() {
     res.json(config);
   });
 
+  // Admin login
+  app.post("/api/admin/login", (req, res) => {
+    const { email, password } = req.body;
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminPassword) {
+      return res.status(500).json({ error: "Admin credentials not configured" });
+    }
+
+    if (email !== adminEmail || password !== adminPassword) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = generateAdminToken();
+    adminTokens.set(token, { createdAt: Date.now() });
+
+    res.json({ token });
+  });
+
+  // Admin verify token
+  app.get("/api/admin/verify", adminAuthMiddleware, (req, res) => {
+    res.json({ valid: true });
+  });
+
+  // Admin: List all beans
+  app.get("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const allBeans = await db.select().from(beans).orderBy(desc(beans.createdAt));
+      res.json(allBeans);
+    } catch (e) {
+      console.error("Admin beans list error:", e);
+      res.status(500).json({ error: "Failed to fetch beans" });
+    }
+  });
+
+  // Admin: Create bean
+  app.post("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const { name, slug, description, imageUrl, pricePer250g } = req.body;
+      if (!name || !slug) {
+        return res.status(400).json({ error: "Name and slug are required" });
+      }
+      const result = await db.insert(beans).values({
+        name,
+        slug,
+        description: description || null,
+        imageUrl: imageUrl || null,
+        pricePer250g: pricePer250g || 100000,
+      }).returning();
+      res.json(result[0]);
+    } catch (e: any) {
+      console.error("Admin create bean error:", e);
+      if (e?.code === '23505') {
+        return res.status(400).json({ error: "A bean with this slug already exists" });
+      }
+      res.status(500).json({ error: "Failed to create bean" });
+    }
+  });
+
+  // Admin: Update bean
+  app.put("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
+      const { name, slug, description, imageUrl, pricePer250g, isActive } = req.body;
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (slug !== undefined) updateData.slug = slug;
+      if (description !== undefined) updateData.description = description;
+      if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+      if (pricePer250g !== undefined) updateData.pricePer250g = pricePer250g;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const result = await db.update(beans)
+        .set(updateData)
+        .where(eq(beans.id, id))
+        .returning();
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Bean not found" });
+      }
+      res.json(result[0]);
+    } catch (e: any) {
+      console.error("Admin update bean error:", e);
+      res.status(500).json({ error: "Failed to update bean" });
+    }
+  });
+
+  // Admin: Delete bean (soft delete)
+  app.delete("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
+      const result = await db.update(beans)
+        .set({ isActive: false })
+        .where(eq(beans.id, id))
+        .returning();
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Bean not found" });
+      }
+      res.json({ success: true, bean: result[0] });
+    } catch (e) {
+      console.error("Admin delete bean error:", e);
+      res.status(500).json({ error: "Failed to delete bean" });
+    }
+  });
+
+  // Public: List active beans
+  app.get("/api/beans", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const activeBeans = await db.select().from(beans).where(eq(beans.isActive, true));
+      res.json(activeBeans);
+    } catch (e) {
+      console.error("Beans list error:", e);
+      res.status(500).json({ error: "Failed to fetch beans" });
+    }
+  });
+
   // Pricing endpoint - fetches from database or uses default
   app.get("/api/pricing", async (req, res) => {
     try {
       const DEFAULT_PRICE_PER_250G = 100000;
       
       let pricePer250g = DEFAULT_PRICE_PER_250G;
+      let activeBeansList: any[] = [];
       
       if (db) {
         try {
@@ -78,15 +256,22 @@ async function startServer() {
           }
         } catch (dbError) {
           console.error("Database error fetching pricing config:", dbError);
-          // Fall back to default on DB error
+        }
+
+        try {
+          activeBeansList = await db.select().from(beans).where(eq(beans.isActive, true)).orderBy(desc(beans.createdAt));
+        } catch (dbError) {
+          console.error("Database error fetching beans:", dbError);
         }
       }
       
+      // If no beans exist yet, use config-based pricing as fallback
       const pricePerGram = pricePer250g / 250;
       
       res.json({
         pricePer250g,
-        pricePerGram
+        pricePerGram,
+        beans: activeBeansList
       });
     } catch (error) {
       console.error("Pricing endpoint error:", error);
@@ -96,10 +281,41 @@ async function startServer() {
 
   app.post("/api/charge", async (req, res) => {
     try {
-      const { amount, grams, turnstileToken } = req.body;
+      const { amount: clientAmount, grams: rawGrams, beanSlug, turnstileToken } = req.body;
 
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ error: "Invalid amount" });
+      const grams = parseFloat(rawGrams);
+      if (isNaN(grams) || grams <= 0 || grams > 100000) {
+        return res.status(400).json({ error: "Invalid grams value" });
+      }
+
+      if (!db) {
+        return res.status(503).json({ error: "Database not configured" });
+      }
+
+      if (!beanSlug) {
+        return res.status(400).json({ error: "Bean selection is required" });
+      }
+
+      let expectedAmount: number;
+
+      try {
+        const bean = await db.select().from(beans).where(
+          and(eq(beans.slug, beanSlug), eq(beans.isActive, true))
+        ).limit(1);
+        if (bean.length === 0) {
+          return res.status(400).json({ error: "Invalid or unavailable bean selection" });
+        }
+        expectedAmount = Math.round(grams * bean[0].pricePer250g / 250);
+      } catch (e) {
+        console.error("Bean lookup error:", e);
+        return res.status(503).json({ error: "Service unavailable. Please try again." });
+      }
+
+      if (clientAmount !== undefined && clientAmount !== null) {
+        if (Math.round(clientAmount) !== expectedAmount) {
+          console.warn(`Amount mismatch: client sent ${Math.round(clientAmount)}, expected ${expectedAmount}`);
+          return res.status(400).json({ error: "Amount mismatch. Please refresh and try again." });
+        }
       }
 
       // Verify Turnstile token
@@ -131,7 +347,7 @@ async function startServer() {
         body: JSON.stringify({
           transaction_details: {
             order_id: orderId,
-            gross_amount: Math.round(amount),
+            gross_amount: expectedAmount,
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
           custom_field1: `Coffee: ${grams}g`,
@@ -148,12 +364,18 @@ async function startServer() {
 
       if (db) {
         try {
+          const mdrFee = Math.round(expectedAmount * 0.007);
+          const netAmount = expectedAmount - mdrFee;
+
           await db.insert(orders).values({
             orderId,
-            amount: Math.round(amount),
+            amount: expectedAmount,
             grams: grams.toString(),
+            beanSlug: beanSlug || null,
             status: "pending",
-            snapToken: data.token // Store snap token for later use
+            snapToken: data.token,
+            mdrFee: mdrFee,
+            netAmount: netAmount,
           });
         } catch (e) {
           console.error("DB Insert Error:", e);
@@ -164,7 +386,7 @@ async function startServer() {
         orderId,
         token: data.token,
         redirectUrl: data.redirect_url,
-        amount: Math.round(amount),
+        amount: expectedAmount,
         status: "pending",
       });
     } catch (error) {
@@ -374,12 +596,17 @@ async function startServer() {
 
       // Insert NEW order into database with fresh token
       console.log("[Continue Payment] Inserting new order into database...");
+      const mdrFee = Math.round(oldOrder.amount * 0.007);
+      const netAmount = oldOrder.amount - mdrFee;
       await db.insert(orders).values({
         orderId: newOrderId,
         amount: oldOrder.amount,
         grams: oldOrder.grams,
+        beanSlug: oldOrder.beanSlug || null,
         status: "pending",
-        snapToken: data.token
+        snapToken: data.token,
+        mdrFee: mdrFee,
+        netAmount: netAmount,
       });
 
       // Mark the old order as replaced
@@ -417,12 +644,242 @@ async function startServer() {
   app.get("/api/balance", async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const result = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
-      const total = result[0]?.total ? parseInt(result[0].total as string, 10) : 0;
-      res.json({ balance: total });
+      // Calculate total income from completed orders
+      const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
+      
+      // Calculate total MDR fees from completed orders
+      const mdrResult = await db.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
+      
+      // Calculate total approved disbursements
+      const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
+      const totalDisbursed = disbursedResult[0]?.total ? parseInt(disbursedResult[0].total as string, 10) : 0;
+      
+      // Calculate total withdrawal fees from approved disbursements
+      const withdrawalFeeResult = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
+      const totalWithdrawalFees = withdrawalFeeResult[0]?.total ? parseInt(withdrawalFeeResult[0].total as string, 10) : 0;
+      
+      // Calculate net income after MDR
+      const netIncome = totalIncome - totalMdrFees;
+      
+      // Available balance = net income - approved disbursements - withdrawal fees
+      const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
+      
+      res.json({ 
+        balance: Math.max(0, availableBalance),
+        totalIncome,
+        totalMdrFees,
+        netIncome,
+        totalDisbursed,
+        totalWithdrawalFees,
+        totalFees: totalMdrFees + totalWithdrawalFees,
+      });
     } catch (e) {
       console.error("DB Balance Error:", e);
       res.status(500).json({ error: "Failed to fetch balance" });
+    }
+  });
+
+  // Get all disbursement requests
+  app.get("/api/disbursements", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    try {
+      const allDisbursements = await db.select().from(disbursements).orderBy(desc(disbursements.requestedAt));
+      res.json(allDisbursements);
+    } catch (e) {
+      console.error("DB Disbursements Error:", e);
+      res.status(500).json({ error: "Failed to fetch disbursements" });
+    }
+  });
+
+  // Create new disbursement request with Turnstile bot protection
+  app.post("/api/disbursements", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    
+    try {
+      const { amount, description, requestedBy, turnstileToken } = req.body;
+      
+      // Verify Turnstile token for bot protection
+      const isTurnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
+      if (!isTurnstileValid) {
+        return res.status(400).json({ error: "Invalid Turnstile token" });
+      }
+      
+      // Validation
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: "Amount must be greater than 0" });
+      }
+      if (!description || description.trim().length === 0) {
+        return res.status(400).json({ error: "Description is required" });
+      }
+      
+      const requestId = `disb-${uuidv4()}`;
+      const withdrawalFee = 5000; // Rp 5,000 flat fee
+      const netAmount = Math.max(0, amount - withdrawalFee);
+      
+      const result = await db.insert(disbursements).values({
+        requestId,
+        amount: Math.round(amount),
+        withdrawalFee: withdrawalFee,
+        netAmount: netAmount,
+        status: "pending",
+        description: description.trim(),
+        requestedBy: requestedBy?.trim() || 'anonymous',
+        requestedAt: new Date(),
+      }).returning();
+      
+      res.status(201).json({
+        success: true,
+        disbursement: result[0],
+      });
+    } catch (e) {
+      console.error("Create Disbursement Error:", e);
+      res.status(500).json({ error: "Failed to create disbursement request" });
+    }
+  });
+
+  // Approve a disbursement request (admin only)
+  app.post("/api/disbursements/:requestId/approve", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    
+    try {
+      const { requestId } = req.params;
+      const { processedBy } = req.body;
+      
+      // Find the request
+      const existing = await db.select().from(disbursements).where(eq(disbursements.requestId, requestId));
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Disbursement request not found" });
+      }
+      
+      const request = existing[0];
+      if (request.status !== "pending") {
+        return res.status(400).json({ error: `Cannot approve ${request.status} request` });
+      }
+      
+      // Calculate available balance (same logic as /api/balance)
+      const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
+      
+      const mdrResult = await db.execute(sql`SELECT SUM(mdr_fee) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
+      
+      const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
+      const totalDisbursed = disbursedResult[0]?.total ? parseInt(disbursedResult[0].total as string, 10) : 0;
+      
+      const withdrawalFeeResult = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
+      const totalWithdrawalFees = withdrawalFeeResult[0]?.total ? parseInt(withdrawalFeeResult[0].total as string, 10) : 0;
+      
+      const netIncome = totalIncome - totalMdrFees;
+      const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
+      
+      // Check if there's enough balance (need to cover both amount + withdrawal fee)
+      const totalNeeded = request.amount + request.withdrawalFee;
+      
+      if (totalNeeded > availableBalance) {
+        return res.status(400).json({ 
+          error: "Insufficient balance", 
+          availableBalance,
+          requestedAmount: request.amount,
+          withdrawalFee: request.withdrawalFee,
+          totalNeeded,
+        });
+      }
+      
+      // Update status to approved
+      const result = await db.update(disbursements)
+        .set({ 
+          status: "approved", 
+          processedAt: new Date(),
+          processedBy: processedBy?.trim() || 'admin'
+        })
+        .where(eq(disbursements.requestId, requestId))
+        .returning();
+      
+      res.json({
+        success: true,
+        disbursement: result[0],
+        message: "Disbursement approved successfully"
+      });
+    } catch (e) {
+      console.error("Approve Disbursement Error:", e);
+      res.status(500).json({ error: "Failed to approve disbursement" });
+    }
+  });
+
+  // Reject a disbursement request (admin only)
+  app.post("/api/disbursements/:requestId/reject", adminAuthMiddleware, async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    
+    try {
+      const { requestId } = req.params;
+      const { processedBy } = req.body;
+      
+      const existing = await db.select().from(disbursements).where(eq(disbursements.requestId, requestId));
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Disbursement request not found" });
+      }
+      
+      const request = existing[0];
+      if (request.status !== "pending") {
+        return res.status(400).json({ error: `Cannot reject ${request.status} request` });
+      }
+      
+      const result = await db.update(disbursements)
+        .set({ 
+          status: "rejected", 
+          processedAt: new Date(),
+          processedBy: processedBy?.trim() || 'admin'
+        })
+        .where(eq(disbursements.requestId, requestId))
+        .returning();
+      
+      res.json({
+        success: true,
+        disbursement: result[0],
+        message: "Disbursement rejected"
+      });
+    } catch (e) {
+      console.error("Reject Disbursement Error:", e);
+      res.status(500).json({ error: "Failed to reject disbursement" });
+    }
+  });
+
+  // Cancel a disbursement request (user cancels their own)
+  app.post("/api/disbursements/:requestId/cancel", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "Database not configured" });
+    
+    try {
+      const { requestId } = req.params;
+      
+      const existing = await db.select().from(disbursements).where(eq(disbursements.requestId, requestId));
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Disbursement request not found" });
+      }
+      
+      const request = existing[0];
+      if (request.status !== "pending") {
+        return res.status(400).json({ error: `Cannot cancel ${request.status} request` });
+      }
+      
+      const result = await db.update(disbursements)
+        .set({ 
+          status: "cancelled",
+          processedAt: new Date(),
+          processedBy: 'self'
+        })
+        .where(eq(disbursements.requestId, requestId))
+        .returning();
+      
+      res.json({
+        success: true,
+        disbursement: result[0],
+        message: "Disbursement cancelled"
+      });
+    } catch (e) {
+      console.error("Cancel Disbursement Error:", e);
+      res.status(500).json({ error: "Failed to cancel disbursement" });
     }
   });
 
