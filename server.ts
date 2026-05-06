@@ -297,15 +297,17 @@ async function startServer() {
       }
 
       let expectedAmount: number;
+      let selectedBean: any;
 
       try {
-        const bean = await db.select().from(beans).where(
+        const beanResult = await db.select().from(beans).where(
           and(eq(beans.slug, beanSlug), eq(beans.isActive, true))
         ).limit(1);
-        if (bean.length === 0) {
+        if (beanResult.length === 0) {
           return res.status(400).json({ error: "Invalid or unavailable bean selection" });
         }
-        expectedAmount = Math.round(grams * bean[0].pricePer250g / 250);
+        selectedBean = beanResult[0];
+        expectedAmount = Math.round(grams * selectedBean.pricePer250g / 250);
       } catch (e) {
         console.error("Bean lookup error:", e);
         return res.status(503).json({ error: "Service unavailable. Please try again." });
@@ -372,6 +374,7 @@ async function startServer() {
             amount: expectedAmount,
             grams: grams.toString(),
             beanSlug: beanSlug || null,
+            beanName: selectedBean.name || null,
             status: "pending",
             snapToken: data.token,
             mdrFee: mdrFee,
@@ -603,6 +606,7 @@ async function startServer() {
         amount: oldOrder.amount,
         grams: oldOrder.grams,
         beanSlug: oldOrder.beanSlug || null,
+        beanName: oldOrder.beanName || null,
         status: "pending",
         snapToken: data.token,
         mdrFee: mdrFee,
@@ -666,6 +670,26 @@ async function startServer() {
       // Available balance = net income - approved disbursements - withdrawal fees
       const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
       
+      // Calculate per-bean income breakdown (only from completed orders)
+      const beanIncomeResult = await db.execute(sql`
+        SELECT 
+          COALESCE(o."bean_name", 'Unknown') as bean_name,
+          COALESCE(o."bean_slug", 'unknown') as bean_slug,
+          SUM(o.amount) as total_income,
+          COUNT(*) as order_count
+        FROM orders o
+        WHERE o.status IN ('settlement', 'capture')
+        GROUP BY o."bean_name", o."bean_slug"
+        ORDER BY total_income DESC
+      `);
+      
+      const perBeanIncome = (beanIncomeResult || []).map((row: any) => ({
+        beanName: row.bean_name,
+        beanSlug: row.bean_slug,
+        totalIncome: parseInt(row.total_income, 10) || 0,
+        orderCount: parseInt(row.order_count, 10) || 0,
+      }));
+      
       res.json({ 
         balance: Math.max(0, availableBalance),
         totalIncome,
@@ -674,6 +698,7 @@ async function startServer() {
         totalDisbursed,
         totalWithdrawalFees,
         totalFees: totalMdrFees + totalWithdrawalFees,
+        perBeanIncome,
       });
     } catch (e) {
       console.error("DB Balance Error:", e);

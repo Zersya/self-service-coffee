@@ -19,6 +19,12 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
     totalDisbursed: number;
     totalWithdrawalFees: number;
     totalFees: number;
+    perBeanIncome: Array<{
+      beanName: string;
+      beanSlug: string;
+      totalIncome: number;
+      orderCount: number;
+    }>;
   } | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -177,6 +183,26 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                 <span>Rp {balanceDetails.netIncome.toLocaleString('id-ID')}</span>
               </div>
             </div>
+            
+            {/* Per-Bean Income Breakdown */}
+            {balanceDetails.perBeanIncome && balanceDetails.perBeanIncome.length > 0 && (
+              <div className="bg-white/50 rounded-xl p-3 text-xs">
+                <div className="font-bold text-[#825e43] mb-2 uppercase tracking-wide">Pemasukan per Biji Kopi:</div>
+                <div className="space-y-1.5">
+                  {balanceDetails.perBeanIncome.map((bean) => (
+                    <div key={bean.beanSlug} className="flex justify-between items-center py-1 border-b border-[#e6d5b8]/50 last:border-0">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-[#3b2313] text-[11px]">{bean.beanName}</span>
+                        <span className="text-[9px] text-[#825e43]">{bean.orderCount} pesanan</span>
+                      </div>
+                      <span className="font-extrabold text-[#e68a2e] text-[11px]">
+                        Rp {bean.totalIncome.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Disbursement Breakdown */}
             {(balanceDetails.totalDisbursed > 0 || balanceDetails.totalWithdrawalFees > 0) && (
@@ -985,23 +1011,23 @@ export default function App() {
         {/* Main App Container */}
         <div className="bg-[#fff8eb] rounded-[2rem] shadow-2xl overflow-hidden border-b-8 border-[#e6d5b8]">
           
-          {/* Tabs */}
-          <div className="flex bg-[#f7ede1] p-2 m-4 rounded-2xl gap-2 shadow-inner border border-[#e6d5b8]/50">
+          {/* Tabs - horizontally scrollable on mobile */}
+          <div className="flex overflow-x-auto flex-nowrap bg-[#f7ede1] p-2 m-4 rounded-2xl gap-2 shadow-inner border border-[#e6d5b8]/50 scrollable-tabs">
             <button
               onClick={() => setActiveTab('pay')}
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'pay' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+              className={`flex-shrink-0 whitespace-nowrap py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'pay' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
             >
               <QrCode className="w-5 h-5" /> Bayar
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'dashboard' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+              className={`flex-shrink-0 whitespace-nowrap py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'dashboard' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
             >
               <LayoutDashboard className="w-5 h-5" /> Dasbor
             </button>
             <button
               onClick={() => setActiveTab('disbursement')}
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'disbursement' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
+              className={`flex-shrink-0 whitespace-nowrap py-3 px-4 rounded-xl text-sm font-extrabold flex items-center justify-center gap-2 transition-all uppercase tracking-wide ${activeTab === 'disbursement' ? 'bg-[#e68a2e] text-white shadow-md' : 'text-[#825e43] hover:bg-[#e6d5b8]'}`}
             >
               <ArrowLeftRight className="w-5 h-5" /> Pencairan
             </button>
