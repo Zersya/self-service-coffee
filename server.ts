@@ -675,14 +675,14 @@ async function startServer() {
       // falls back to stored bean_name or 'Unknown' for historical orders
       const beanIncomeResult = await db.execute(sql`
         SELECT 
-          COALESCE(b.name, o."bean_name", 'Unknown') as bean_name,
+          COALESCE(o."bean_name", b.name, 'Unknown') as bean_name,
           COALESCE(o."bean_slug", b.slug, 'unknown') as bean_slug,
           SUM(o.amount) as total_income,
           COUNT(*) as order_count
         FROM orders o
         LEFT JOIN beans b ON b.slug = o."bean_slug"
         WHERE o.status IN ('settlement', 'capture')
-        GROUP BY b.name, o."bean_name", b.slug, o."bean_slug"
+        GROUP BY o."bean_name", o."bean_slug", b.name, b.slug
         ORDER BY total_income DESC
       `);
       
