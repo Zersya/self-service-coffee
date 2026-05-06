@@ -281,33 +281,41 @@ async function startServer() {
 
   app.post("/api/charge", async (req, res) => {
     try {
-      const { amount: clientAmount, grams: rawGrams, beanSlug, turnstileToken } = req.body;
-
-      const grams = parseFloat(rawGrams);
-      if (isNaN(grams) || grams <= 0 || grams > 100000) {
-        return res.status(400).json({ error: "Invalid grams value" });
-      }
+      const { amount: clientAmount, beans: requestBeans, turnstileToken } = req.body;
 
       if (!db) {
         return res.status(503).json({ error: "Database not configured" });
       }
 
-      if (!beanSlug) {
+      if (!requestBeans || !Array.isArray(requestBeans) || requestBeans.length === 0) {
         return res.status(400).json({ error: "Bean selection is required" });
       }
 
-      let expectedAmount: number;
-      let selectedBean: any;
+      let expectedAmount = 0;
+      let totalGrams = 0;
+      let resolvedBeans: { slug: string; name: string; pricePer250g: number; grams: number }[] = [];
 
       try {
-        const beanResult = await db.select().from(beans).where(
-          and(eq(beans.slug, beanSlug), eq(beans.isActive, true))
-        ).limit(1);
-        if (beanResult.length === 0) {
-          return res.status(400).json({ error: "Invalid or unavailable bean selection" });
+        for (const item of requestBeans) {
+          const { slug, grams: rawGrams } = item;
+          const grams = parseFloat(rawGrams);
+          if (isNaN(grams) || grams <= 0 || grams > 100000) {
+            return res.status(400).json({ error: `Invalid grams for bean: ${slug}` });
+          }
+
+          const beanResult = await db.select().from(beans).where(
+            and(eq(beans.slug, slug), eq(beans.isActive, true))
+          ).limit(1);
+          if (beanResult.length === 0) {
+            return res.status(400).json({ error: `Invalid or unavailable bean: ${slug}` });
+          }
+
+          const bean = beanResult[0];
+          const contribution = Math.round(grams * bean.pricePer250g / 250);
+          expectedAmount += contribution;
+          totalGrams += grams;
+          resolvedBeans.push({ slug: bean.slug, name: bean.name, pricePer250g: bean.pricePer250g, grams });
         }
-        selectedBean = beanResult[0];
-        expectedAmount = Math.round(grams * selectedBean.pricePer250g / 250);
       } catch (e) {
         console.error("Bean lookup error:", e);
         return res.status(503).json({ error: "Service unavailable. Please try again." });
@@ -352,7 +360,7 @@ async function startServer() {
             gross_amount: expectedAmount,
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
-          custom_field1: `Coffee: ${grams}g`,
+          custom_field1: totalGrams > 0 ? `Coffee: ${totalGrams}g` : 'Coffee purchase',
           custom_field3: 'coffee-office',
         }),
       });
@@ -369,12 +377,17 @@ async function startServer() {
           const mdrFee = Math.round(expectedAmount * 0.007);
           const netAmount = expectedAmount - mdrFee;
 
+          const isBlend = resolvedBeans.length > 1;
+          const blendData = isBlend ? JSON.stringify(resolvedBeans) : null;
+
           await db.insert(orders).values({
             orderId,
             amount: expectedAmount,
-            grams: grams.toString(),
-            beanSlug: beanSlug || null,
-            beanName: selectedBean.name || null,
+            grams: totalGrams.toString(),
+            beanSlug: resolvedBeans[0].slug || null,
+            beanName: resolvedBeans[0].name || null,
+            isBlend: isBlend,
+            blendData: blendData,
             status: "pending",
             snapToken: data.token,
             mdrFee: mdrFee,
@@ -607,6 +620,8 @@ async function startServer() {
         grams: oldOrder.grams,
         beanSlug: oldOrder.beanSlug || null,
         beanName: oldOrder.beanName || null,
+        isBlend: oldOrder.isBlend || false,
+        blendData: oldOrder.blendData || null,
         status: "pending",
         snapToken: data.token,
         mdrFee: mdrFee,
@@ -627,6 +642,8 @@ async function startServer() {
         redirectUrl: data.redirect_url,
         grams: oldOrder.grams,
         amount: oldOrder.amount,
+        blendData: oldOrder.blendData,
+        beanSlug: oldOrder.beanSlug,
       });
     } catch (error) {
       console.error("[Continue Payment] Error:", error);
@@ -671,27 +688,58 @@ async function startServer() {
       const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
       
       // Calculate per-bean income breakdown (only from completed orders)
-      // Joins with beans table to resolve actual bean name from slug,
-      // falls back to stored bean_name or 'Unknown' for historical orders
-      const beanIncomeResult = await db.execute(sql`
-        SELECT 
-          COALESCE(o."bean_name", b.name, 'Unknown') as bean_name,
-          COALESCE(o."bean_slug", b.slug, 'unknown') as bean_slug,
-          SUM(o.amount) as total_income,
-          COUNT(*) as order_count
+      // For blend orders, income is split equally among blended beans
+      const settledOrders = await db.execute(sql`
+        SELECT o.amount, o.bean_slug, o.bean_name, o.is_blend, o.blend_data
         FROM orders o
-        LEFT JOIN beans b ON b.slug = o."bean_slug"
         WHERE o.status IN ('settlement', 'capture')
-        GROUP BY o."bean_name", o."bean_slug", b.name, b.slug
-        ORDER BY total_income DESC
       `);
-      
-      const perBeanIncome = (beanIncomeResult || []).map((row: any) => ({
-        beanName: row.bean_name,
-        beanSlug: row.bean_slug,
-        totalIncome: parseInt(row.total_income, 10) || 0,
-        orderCount: parseInt(row.order_count, 10) || 0,
-      }));
+
+      const beanIncomeMap = new Map<string, { name: string; income: number; count: number }>();
+
+      for (const row of (settledOrders || []) as any[]) {
+        if (row.is_blend && row.blend_data) {
+          let blendBeans: { slug: string; name: string }[];
+          try {
+            blendBeans = JSON.parse(row.blend_data);
+          } catch {
+            blendBeans = [];
+          }
+          const splitIncome = Math.round(parseInt(row.amount, 10) / blendBeans.length);
+          for (const b of blendBeans) {
+            const key = b.slug || 'unknown';
+            const existing = beanIncomeMap.get(key);
+            if (existing) {
+              existing.income += splitIncome;
+              existing.count += 1;
+            } else {
+              beanIncomeMap.set(key, { name: b.name, income: splitIncome, count: 1 });
+            }
+          }
+        } else {
+          const key = row.bean_slug || 'unknown';
+          const existing = beanIncomeMap.get(key);
+          if (existing) {
+            existing.income += parseInt(row.amount, 10);
+            existing.count += 1;
+          } else {
+            beanIncomeMap.set(key, {
+              name: row.bean_name || 'Unknown',
+              income: parseInt(row.amount, 10),
+              count: 1,
+            });
+          }
+        }
+      }
+
+      const perBeanIncome = Array.from(beanIncomeMap.entries())
+        .map(([slug, data]) => ({
+          beanName: data.name,
+          beanSlug: slug,
+          totalIncome: data.income,
+          orderCount: data.count,
+        }))
+        .sort((a, b) => b.totalIncome - a.totalIncome);
       
       res.json({ 
         balance: Math.max(0, availableBalance),

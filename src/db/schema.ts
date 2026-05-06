@@ -17,7 +17,9 @@ export const orders = pgTable('orders', {
   amount: integer('amount').notNull(),
   grams: numeric('grams').notNull(),
   beanSlug: text('bean_slug'),
-  beanName: text('bean_name'), // snapshot of bean name at time of purchase for historical accuracy
+  beanName: text('bean_name'),
+  isBlend: boolean('is_blend').notNull().default(false),
+  blendData: text('blend_data'),
   status: text('status').notNull().default('pending'),
   snapToken: text('snap_token'),
   mdrFee: integer('mdr_fee').notNull().default(0),

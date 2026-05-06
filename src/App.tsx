@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null) => void, turnstileSiteKey?: string | null, beans?: any[] }) {
+function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null, blendData?: string | null, beanSlug?: string | null) => void, turnstileSiteKey?: string | null, beans?: any[] }) {
   const [history, setHistory] = useState<any[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [balanceDetails, setBalanceDetails] = useState<{
@@ -98,7 +98,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
       }
       
       setShowOrderModal(false);
-      onPayOrder(data.grams, data.amount, data.orderId, data.token);
+      onPayOrder(data.grams, data.amount, data.orderId, data.token, selectedOrder.blendData, data.beanSlug);
       setSelectedOrder(null);
     } catch (err: any) {
       console.error('Regenerate token error:', err);
@@ -243,7 +243,17 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
             >
               <div>
                 <p className="font-extrabold text-[#3b2313] text-lg group-hover:text-[#e68a2e] transition-colors">Rp {order.amount.toLocaleString('id-ID')}</p>
-                <p className="text-xs font-bold text-[#825e43] mt-1">{order.grams}g {beans?.find(b => b.slug === order.beanSlug)?.name || (order.beanSlug ? order.beanSlug : 'Kopi')} • {new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="text-xs font-bold text-[#825e43] mt-1">
+                  {(() => {
+                    if (order.isBlend && order.blendData) {
+                      try {
+                        const d = JSON.parse(order.blendData);
+                        return d.map((b: any) => `${b.name} ${b.grams}g`).join(' + ');
+                      } catch { return 'Campuran'; }
+                    }
+                    return (beans?.find(b => b.slug === order.beanSlug)?.name || order.beanName || (order.beanSlug ? order.beanSlug : 'Kopi')) + ` ${order.grams}g`;
+                  })()} • {new Date(order.createdAt).toLocaleDateString()}
+                </p>
               </div>
               <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
                 order.status === 'settlement' || order.status === 'capture' ? 'bg-[#e6f4ea] text-[#1e8e3e]' :
@@ -295,11 +305,27 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                 </span>
               </div>
               <div className="w-full h-px bg-[#e6d5b8] my-2"></div>
-              <div className="flex justify-between">
+              <div className="flex flex-col gap-2">
                 <span className="text-[#825e43] font-bold">Kopi</span>
-                <span className="font-bold text-[#3b2313]">
-                  {selectedOrder.grams}g {beans?.find(b => b.slug === selectedOrder.beanSlug)?.name || ''}
-                </span>
+                {selectedOrder.isBlend && selectedOrder.blendData ? (
+                  (() => {
+                    try {
+                      const d = JSON.parse(selectedOrder.blendData);
+                      return d.map((b: any, i: number) => (
+                        <div key={i} className="flex justify-between items-center bg-[#f7ede1] rounded-lg px-3 py-1.5">
+                          <span className="font-bold text-[#3b2313] text-sm">{b.name}</span>
+                          <span className="font-bold text-[#825e43] text-sm">{b.grams}g</span>
+                        </div>
+                      ));
+                    } catch {
+                      return <span className="font-bold text-[#3b2313]">Campuran</span>;
+                    }
+                  })()
+                ) : (
+                  <span className="font-bold text-[#3b2313]">
+                    {beans?.find(b => b.slug === selectedOrder.beanSlug)?.name || selectedOrder.beanName || ''} • {selectedOrder.grams}g
+                  </span>
+                )}
               </div>
               <div className="flex justify-between">
                 <span className="text-[#825e43] font-bold">Tanggal</span>
@@ -709,7 +735,7 @@ function DisbursementManager({ onClose, turnstileSiteKey }: { onClose: () => voi
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'pay' | 'dashboard' | 'disbursement'>('pay');
-  const [grams, setGrams] = useState<string>('');
+  const [beanGrams, setBeanGrams] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -720,21 +746,23 @@ export default function App() {
   const [pricing, setPricing] = useState<{ pricePer250g: number; pricePerGram: number } | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [beans, setBeans] = useState<any[]>([]);
-  const [selectedBeanSlug, setSelectedBeanSlug] = useState<string | null>(null);
+  const [selectedBeanSlugs, setSelectedBeanSlugs] = useState<string[]>([]);
   
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const selectedBean = beans.find(b => b.slug === selectedBeanSlug);
-  const activePricePer250g = selectedBean ? selectedBean.pricePer250g : (pricing?.pricePer250g || 100000);
-  const amount = grams && pricing ? Math.round(parseFloat(grams) * (activePricePer250g / 250)) : 0;
+  const selectedBeans = beans.filter(b => selectedBeanSlugs.includes(b.slug));
+  const amount = selectedBeans.reduce((sum, bean) => {
+    const g = parseFloat(beanGrams[bean.slug] || '0');
+    return sum + (g > 0 ? Math.round(g * bean.pricePer250g / 250) : 0);
+  }, 0);
 
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingSnapToken, setPendingSnapToken] = useState<string | null>(null);
   const snapEmbedInProgress = useRef(false);
 
-  const handlePayOrder = (orderGrams: string, orderAmount: number, orderId: string, snapToken: string) => {
+  const handlePayOrder = (orderGrams: string, orderAmount: number, orderId: string, snapToken: string, blendData?: string | null, beanSlug?: string | null) => {
     if (window.snap && typeof window.snap.hide === 'function') {
       try { window.snap.hide(); } catch (e) { console.log('Snap hide error (expected):', e); }
     }
@@ -743,12 +771,28 @@ export default function App() {
     if (container) container.innerHTML = '';
     
     setActiveTab('pay');
-    setGrams(orderGrams);
     setOrderId(orderId);
     setPendingOrderId(orderId);
     setPendingSnapToken(null);
     setStatus('pending');
     setError(null);
+    
+    if (blendData) {
+      try {
+        const parsed = JSON.parse(blendData);
+        const restored: Record<string, string> = {};
+        const restoredSlugs: string[] = [];
+        for (const item of parsed) {
+          restored[item.slug] = String(item.grams);
+          restoredSlugs.push(item.slug);
+        }
+        setBeanGrams(restored);
+        setSelectedBeanSlugs(restoredSlugs);
+      } catch {}
+    } else if (beanSlug) {
+      setSelectedBeanSlugs([beanSlug]);
+      setBeanGrams({ [beanSlug]: orderGrams });
+    }
     
     setTimeout(() => {
       setPendingSnapToken(snapToken);
@@ -841,8 +885,9 @@ export default function App() {
         }
         if (data.beans && data.beans.length > 0) {
           setBeans(data.beans);
+          setSelectedBeanSlugs(prev => prev.filter(s => data.beans.some((b: any) => b.slug === s && b.isActive)));
         } else if (data.beans && data.beans.length === 0) {
-          setSelectedBeanSlug(null);
+          setSelectedBeanSlugs([]);
         }
       })
       .catch(err => setPricingError("Failed to load pricing"));
@@ -868,13 +913,17 @@ export default function App() {
   }, [orderId, status]);
 
   const handleGenerateQR = async () => {
-    if (!selectedBeanSlug) {
+    if (selectedBeanSlugs.length === 0) {
       setError("Silakan pilih biji kopi terlebih dahulu.");
       return;
     }
-    if (!grams || parseFloat(grams) <= 0) {
-      setError("Masukkan jumlah gramasi yang valid.");
-      return;
+    for (const slug of selectedBeanSlugs) {
+      const g = parseFloat(beanGrams[slug] || '0');
+      if (isNaN(g) || g <= 0) {
+        const bean = beans.find(b => b.slug === slug);
+        setError(`Masukkan gramasi untuk ${bean?.name || slug}.`);
+        return;
+      }
     }
     if (!snapReady) {
       setError("Sistem pembayaran belum siap. Mohon tunggu sebentar.");
@@ -893,10 +942,14 @@ export default function App() {
     setStatus(null);
 
     try {
+      const beansPayload = selectedBeanSlugs.map(slug => ({
+        slug,
+        grams: parseFloat(beanGrams[slug] || '0'),
+      }));
       const res = await fetch('/api/charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, grams: parseFloat(grams), beanSlug: selectedBeanSlug, turnstileToken }),
+        body: JSON.stringify({ amount, beans: beansPayload, turnstileToken }),
       });
 
       const data = await res.json();
@@ -938,7 +991,8 @@ export default function App() {
     if (snapContainer) snapContainer.innerHTML = '';
     snapEmbedInProgress.current = false;
     setPendingSnapToken(null);
-    setGrams('');
+    setBeanGrams({});
+    setSelectedBeanSlugs([]);
     setOrderId(null);
     setStatus(null);
     setError(null);
@@ -1054,74 +1108,93 @@ export default function App() {
                       </p>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {beans.filter(b => b.isActive).map(bean => (
-                          <button
-                            key={bean.slug}
-                            onClick={() => {
-                              setSelectedBeanSlug(bean.slug);
-                              setGrams('');
-                            }}
-                            className={`relative text-left p-4 rounded-xl border-2 transition-all ${
-                              selectedBeanSlug === bean.slug
-                                ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md'
-                                : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              {bean.imageUrl ? (
-                                <img src={bean.imageUrl} alt={bean.name} className="w-12 h-12 rounded-lg object-cover border border-[#e6d5b8]" />
-                              ) : (
-                                <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-[#e6d5b8]">
-                                  <Coffee className="w-6 h-6 text-[#825e43]" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
-                                {bean.description && (
-                                  <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                        {beans.filter(b => b.isActive).map(bean => {
+                          const isSelected = selectedBeanSlugs.includes(bean.slug);
+                          return (
+                            <button
+                              key={bean.slug}
+                              onClick={() => {
+                                setSelectedBeanSlugs(prev => {
+                                  if (isSelected) {
+                                    const next = prev.filter(s => s !== bean.slug);
+                                    setBeanGrams(g => { const n = {...g}; delete n[bean.slug]; return n; });
+                                    return next;
+                                  } else {
+                                    setBeanGrams(g => ({ ...g, [bean.slug]: '' }));
+                                    return [...prev, bean.slug];
+                                  }
+                                });
+                              }}
+                              className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                                isSelected
+                                  ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md'
+                                  : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {bean.imageUrl ? (
+                                  <img src={bean.imageUrl} alt={bean.name} className="w-12 h-12 rounded-lg object-cover border border-[#e6d5b8]" />
+                                ) : (
+                                  <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-[#e6d5b8]">
+                                    <Coffee className="w-6 h-6 text-[#825e43]" />
+                                  </div>
                                 )}
-                                <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
-                                  Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
-                                </p>
-                              </div>
-                              {selectedBeanSlug === bean.slug && (
-                                <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center">
-                                  <Check className="w-3 h-3 text-white" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
+                                  {bean.description && (
+                                    <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                                  )}
+                                  <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
+                                    Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                                  </p>
                                 </div>
-                              )}
-                            </div>
-                          </button>
-                        ))}
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center">
+                                    <Check className="w-3 h-3 text-white" />
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm relative overflow-hidden group hover:border-[#e68a2e]/50 transition-colors">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#f7ede1] rounded-bl-full -z-0 opacity-50 pointer-events-none transition-transform group-hover:scale-110"></div>
-                    
-                    <div className="relative z-10">
-                      <label htmlFor="grams" className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
-                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
-                        Input Gramasi
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          id="grams"
-                          min="0"
-                          step="0.1"
-                          value={grams}
-                          onChange={(e) => setGrams(e.target.value)}
-                          className="w-full text-4xl font-extrabold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-4 px-4 pr-16 focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all text-center placeholder:text-[#dcbfa6]"
-                          placeholder="0"
-                        />
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#825e43] font-bold text-xl">
-                          g
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-[#825e43] mt-3 text-center bg-[#f7ede1] py-2 rounded-lg uppercase tracking-wide">
-                        Harga: Rp {selectedBean ? selectedBean.pricePer250g.toLocaleString('id-ID') : pricing ? pricing.pricePer250g.toLocaleString('id-ID') : '...'} / 250g
-                      </p>
+                  <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm">
+                    <label className="block text-sm font-extrabold text-[#825e43] mb-4 uppercase tracking-wide flex items-center gap-2">
+                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                      Gramasi per Kopi
+                    </label>
+                    <div className="space-y-3">
+                      {selectedBeans.length === 0 ? (
+                        <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
+                          Pilih biji kopi terlebih dahulu
+                        </p>
+                      ) : (
+                        selectedBeans.map(bean => (
+                          <div key={bean.slug} className="flex items-center gap-3 bg-[#f7ede1] rounded-xl p-3 border-2 border-[#e6d5b8]">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
+                              <p className="text-[10px] font-bold text-[#825e43]">
+                                Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                              </p>
+                            </div>
+                            <div className="relative w-28">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={beanGrams[bean.slug] || ''}
+                                onChange={(e) => setBeanGrams(g => ({ ...g, [bean.slug]: e.target.value }))}
+                                className="w-full text-lg font-extrabold text-[#3b2313] bg-white border-2 border-[#e6d5b8] rounded-xl py-2 px-3 pr-8 focus:outline-none focus:border-[#e68a2e] transition-all text-right"
+                                placeholder="0"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#825e43] font-bold text-sm">g</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
 
@@ -1164,7 +1237,7 @@ export default function App() {
 
                   <button
                     onClick={handleGenerateQR}
-                    disabled={loading || amount <= 0 || !snapReady || !pricing || !selectedBean || (!!turnstileSiteKey && !turnstileToken)}
+                    disabled={loading || amount <= 0 || !snapReady || !pricing || selectedBeans.length === 0 || (!!turnstileSiteKey && !turnstileToken)}
                     className="w-full bg-[#e68a2e] hover:bg-[#c97a29] text-white font-extrabold text-lg py-5 rounded-xl shadow-xl shadow-[#e68a2e]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-wide border-b-[6px] border-[#b06a20] active:border-b-0 active:translate-y-[6px]"
                   >
                     {loading ? (
