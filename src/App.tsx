@@ -841,11 +841,7 @@ export default function App() {
         }
         if (data.beans && data.beans.length > 0) {
           setBeans(data.beans);
-          if (!selectedBeanSlug) {
-            const firstActive = data.beans.find((b: any) => b.isActive) || data.beans[0];
-            setSelectedBeanSlug(firstActive.slug);
-          }
-        } else if (data.beans && data.beans.length === 0 && !selectedBeanSlug) {
+        } else if (data.beans && data.beans.length === 0) {
           setSelectedBeanSlug(null);
         }
       })
@@ -872,6 +868,10 @@ export default function App() {
   }, [orderId, status]);
 
   const handleGenerateQR = async () => {
+    if (!selectedBeanSlug) {
+      setError("Silakan pilih biji kopi terlebih dahulu.");
+      return;
+    }
     if (!grams || parseFloat(grams) <= 0) {
       setError("Masukkan jumlah gramasi yang valid.");
       return;
