@@ -19,6 +19,7 @@ export default function Admin() {
   const [formDescription, setFormDescription] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formPrice, setFormPrice] = useState('100000');
+  const [formUnitType, setFormUnitType] = useState<'gram' | 'piece'>('gram');
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -98,6 +99,7 @@ export default function Admin() {
     setFormDescription('');
     setFormImageUrl('');
     setFormPrice('100000');
+    setFormUnitType('gram');
     setFormError(null);
     setShowForm(true);
   };
@@ -109,6 +111,7 @@ export default function Admin() {
     setFormDescription(bean.description || '');
     setFormImageUrl(bean.imageUrl || '');
     setFormPrice(bean.pricePer250g.toString());
+    setFormUnitType(bean.unitType || 'gram');
     setFormError(null);
     setShowForm(true);
   };
@@ -123,7 +126,8 @@ export default function Admin() {
         slug: formSlug,
         description: formDescription || null,
         imageUrl: formImageUrl || null,
-        pricePer250g: parseInt(formPrice)
+        pricePer250g: parseInt(formPrice),
+        unitType: formUnitType
       };
 
       const url = editingBean
@@ -232,7 +236,7 @@ export default function Admin() {
                 <Coffee className="w-8 h-8 text-white" />
               </div>
               <h1 className="text-2xl font-extrabold text-[#3b2313] uppercase tracking-widest">Admin</h1>
-              <p className="text-sm font-bold text-[#825e43]">Masuk untuk mengelola biji kopi</p>
+              <p className="text-sm font-bold text-[#825e43]">Masuk untuk mengelola produk</p>
             </div>
 
             {loginError && (
@@ -323,9 +327,9 @@ export default function Admin() {
             )}
 
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-extrabold text-[#825e43] uppercase tracking-wider text-sm flex items-center gap-2">
+                <h2 className="font-extrabold text-[#825e43] uppercase tracking-wider text-sm flex items-center gap-2">
                 <LayoutDashboard className="w-4 h-4 text-[#e68a2e]" />
-                Daftar Biji Kopi
+                Daftar Produk
               </h2>
               <button
                 onClick={openAddForm}
@@ -342,8 +346,8 @@ export default function Admin() {
               </div>
             ) : beans.length === 0 ? (
               <div className="bg-[#f7ede1] border-2 border-dashed border-[#e6d5b8] rounded-2xl p-8 text-center">
-                <p className="text-[#825e43] font-bold">Belum ada biji kopi</p>
-                <p className="text-[#825e43] text-sm mt-1">Klik "Tambah" untuk menambahkan biji kopi pertama</p>
+                <p className="text-[#825e43] font-bold">Belum ada produk</p>
+                <p className="text-[#825e43] text-sm mt-1">Klik "Tambah" untuk menambahkan produk pertama</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -368,7 +372,9 @@ export default function Admin() {
                       </div>
                       <p className="text-xs font-bold text-[#825e43]">Slug: {bean.slug}</p>
                       {bean.description && <p className="text-xs text-[#825e43] mt-1 line-clamp-1">{bean.description}</p>}
-                      <p className="text-sm font-extrabold text-[#e68a2e] mt-1">Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g</p>
+                      <p className="text-sm font-extrabold text-[#e68a2e] mt-1">
+                        Rp {bean.pricePer250g.toLocaleString('id-ID')} / {bean.unitType === 'piece' ? 'pcs' : '250g'}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
@@ -498,7 +504,7 @@ export default function Admin() {
           <div className="relative bg-[#fff8eb] rounded-[2rem] shadow-2xl w-full max-w-lg p-6 border-[4px] border-[#e6d5b8] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-extrabold text-[#3b2313] uppercase tracking-wide">
-                {editingBean ? 'Edit Biji Kopi' : 'Tambah Biji Kopi'}
+                {editingBean ? 'Edit Produk' : 'Tambah Produk'}
               </h3>
               <button
                 onClick={() => setShowForm(false)}
@@ -544,7 +550,7 @@ export default function Admin() {
                   value={formDescription}
                   onChange={e => setFormDescription(e.target.value)}
                   className="w-full bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 font-bold text-[#3b2313] focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all resize-none"
-                  placeholder="Deskripsi singkat tentang biji kopi..."
+                  placeholder="Deskripsi singkat tentang produk..."
                   rows={3}
                 />
               </div>
@@ -559,7 +565,22 @@ export default function Admin() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-extrabold text-[#825e43] mb-2 uppercase tracking-wide">Harga per 250g (Rp) *</label>
+                <label className="block text-xs font-extrabold text-[#825e43] mb-2 uppercase tracking-wide">Jenis Satuan *</label>
+                <select
+                  value={formUnitType}
+                  onChange={e => setFormUnitType(e.target.value as 'gram' | 'piece')}
+                  className="w-full bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 font-bold text-[#3b2313] focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all"
+                  required
+                >
+                  <option value="gram">Gram (kopi / per 250g)</option>
+                  <option value="piece">Satuan (pcs / pack / bottle)</option>
+                </select>
+                <p className="text-[10px] font-bold text-[#825e43] mt-1">Pilih "Gram" untuk kopi, "Satuan" untuk susu, coklat, dll.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-extrabold text-[#825e43] mb-2 uppercase tracking-wide">
+                  {formUnitType === 'gram' ? 'Harga per 250g (Rp) *' : 'Harga per satuan (Rp) *'}
+                </label>
                 <input
                   type="number"
                   value={formPrice}

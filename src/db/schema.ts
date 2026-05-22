@@ -7,6 +7,7 @@ export const beans = pgTable('beans', {
   description: text('description'),
   imageUrl: text('image_url'),
   pricePer250g: integer('price_per_250g').notNull().default(100000),
+  unitType: text('unit_type').notNull().default('gram'), // 'gram' or 'piece'
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow(),
 });
@@ -21,6 +22,7 @@ export const orders = pgTable('orders', {
   isBlend: boolean('is_blend').notNull().default(false),
   blendData: text('blend_data'),
   status: text('status').notNull().default('pending'),
+  webhookMessage: text('webhook_message'),
   snapToken: text('snap_token'),
   mdrFee: integer('mdr_fee').notNull().default(0),
   netAmount: integer('net_amount').notNull().default(0),

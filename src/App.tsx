@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, AlertTriangle } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
@@ -248,10 +248,12 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                     if (order.isBlend && order.blendData) {
                       try {
                         const d = JSON.parse(order.blendData);
-                        return d.map((b: any) => `${b.name} ${b.grams}g`).join(' + ');
+                        return d.map((b: any) => `${b.name} ${b.grams}${b.unitType === 'piece' ? 'pcs' : 'g'}`).join(' + ');
                       } catch { return 'Campuran'; }
                     }
-                    return (beans?.find(b => b.slug === order.beanSlug)?.name || order.beanName || (order.beanSlug ? order.beanSlug : 'Kopi')) + ` ${order.grams}g`;
+                    const singleBean = beans?.find(b => b.slug === order.beanSlug);
+                    const unitLabel = singleBean?.unitType === 'piece' ? 'pcs' : 'g';
+                    return (singleBean?.name || order.beanName || (order.beanSlug ? order.beanSlug : 'Kopi')) + ` ${order.grams}${unitLabel}`;
                   })()} • {new Date(order.createdAt).toLocaleDateString()}
                 </p>
               </div>
@@ -314,7 +316,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                       return d.map((b: any, i: number) => (
                         <div key={i} className="flex justify-between items-center bg-[#f7ede1] rounded-lg px-3 py-1.5">
                           <span className="font-bold text-[#3b2313] text-sm">{b.name}</span>
-                          <span className="font-bold text-[#825e43] text-sm">{b.grams}g</span>
+                          <span className="font-bold text-[#825e43] text-sm">{b.grams}{b.unitType === 'piece' ? 'pcs' : 'g'}</span>
                         </div>
                       ));
                     } catch {
@@ -323,7 +325,11 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                   })()
                 ) : (
                   <span className="font-bold text-[#3b2313]">
-                    {beans?.find(b => b.slug === selectedOrder.beanSlug)?.name || selectedOrder.beanName || ''} • {selectedOrder.grams}g
+                    {(() => {
+                      const b = beans?.find(b => b.slug === selectedOrder.beanSlug);
+                      const unitLabel = b?.unitType === 'piece' ? 'pcs' : 'g';
+                      return (b?.name || selectedOrder.beanName || '') + ` • ${selectedOrder.grams}${unitLabel}`;
+                    })()}
                   </span>
                 )}
               </div>
@@ -739,6 +745,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [webhookMessage, setWebhookMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snapReady, setSnapReady] = useState(false);
   const [snapError, setSnapError] = useState<string | null>(null);
@@ -755,6 +762,9 @@ export default function App() {
   const selectedBeans = beans.filter(b => selectedBeanSlugs.includes(b.slug));
   const amount = selectedBeans.reduce((sum, bean) => {
     const g = parseFloat(beanGrams[bean.slug] || '0');
+    if (bean.unitType === 'piece') {
+      return sum + (g > 0 ? Math.round(g * bean.pricePer250g) : 0);
+    }
     return sum + (g > 0 ? Math.round(g * bean.pricePer250g / 250) : 0);
   }, 0);
 
@@ -775,6 +785,7 @@ export default function App() {
     setPendingOrderId(orderId);
     setPendingSnapToken(null);
     setStatus('pending');
+    setWebhookMessage(null);
     setError(null);
     
     if (blendData) {
@@ -902,6 +913,9 @@ export default function App() {
           const data = await res.json();
           if (data.status) {
             setStatus(data.status);
+            if (data.webhookMessage) {
+              setWebhookMessage(data.webhookMessage);
+            }
             if (['settlement', 'capture', 'expire', 'cancel', 'deny'].includes(data.status)) {
               clearInterval(interval);
             }
@@ -914,14 +928,15 @@ export default function App() {
 
   const handleGenerateQR = async () => {
     if (selectedBeanSlugs.length === 0) {
-      setError("Silakan pilih biji kopi terlebih dahulu.");
+      setError("Silakan pilih produk terlebih dahulu.");
       return;
     }
     for (const slug of selectedBeanSlugs) {
       const g = parseFloat(beanGrams[slug] || '0');
       if (isNaN(g) || g <= 0) {
         const bean = beans.find(b => b.slug === slug);
-        setError(`Masukkan gramasi untuk ${bean?.name || slug}.`);
+        const label = bean?.unitType === 'piece' ? 'jumlah' : 'gramasi';
+        setError(`Masukkan ${label} untuk ${bean?.name || slug}.`);
         return;
       }
     }
@@ -938,6 +953,7 @@ export default function App() {
     setPendingSnapToken(null);
     setLoading(true);
     setError(null);
+    setWebhookMessage(null);
     setOrderId(null);
     setStatus(null);
 
@@ -995,6 +1011,7 @@ export default function App() {
     setSelectedBeanSlugs([]);
     setOrderId(null);
     setStatus(null);
+    setWebhookMessage(null);
     setError(null);
   };
 
@@ -1018,6 +1035,7 @@ export default function App() {
       if (data.success) {
         setShowCancelModal(false);
         setStatus('cancel');
+        setWebhookMessage(null);
         const snapContainer = document.getElementById('snap-container');
         if (snapContainer) snapContainer.innerHTML = '';
         snapEmbedInProgress.current = false;
@@ -1100,11 +1118,11 @@ export default function App() {
                   <div className="bg-white rounded-2xl p-5 border-2 border-[#e6d5b8] shadow-sm">
                     <label className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
                       <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
-                      Pilih Biji Kopi
+                      Pilih Produk
                     </label>
                     {beans.length === 0 ? (
                       <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
-                        {!pricing ? 'Memuat...' : 'Belum ada biji kopi — hubungi admin'}
+                        {!pricing ? 'Memuat...' : 'Belum ada produk — hubungi admin'}
                       </p>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1145,7 +1163,7 @@ export default function App() {
                                     <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
                                   )}
                                   <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
-                                    Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                                    Rp {bean.pricePer250g.toLocaleString('id-ID')} / {bean.unitType === 'piece' ? 'pcs' : '250g'}
                                   </p>
                                 </div>
                                 {isSelected && (
@@ -1164,12 +1182,16 @@ export default function App() {
                   <div className="bg-white rounded-2xl p-6 border-2 border-[#e6d5b8] shadow-sm">
                     <label className="block text-sm font-extrabold text-[#825e43] mb-4 uppercase tracking-wide flex items-center gap-2">
                       <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
-                      Gramasi per Kopi
+                      {selectedBeans.some(b => b.unitType === 'piece') && selectedBeans.some(b => b.unitType !== 'piece')
+                        ? 'Jumlah / Gramasi'
+                        : selectedBeans.every(b => b.unitType === 'piece')
+                          ? 'Jumlah per Item'
+                          : 'Gramasi per Kopi'}
                     </label>
                     <div className="space-y-3">
                       {selectedBeans.length === 0 ? (
                         <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
-                          Pilih biji kopi terlebih dahulu
+                          Pilih produk terlebih dahulu
                         </p>
                       ) : (
                         selectedBeans.map(bean => (
@@ -1177,20 +1199,22 @@ export default function App() {
                             <div className="flex-1 min-w-0">
                               <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
                               <p className="text-[10px] font-bold text-[#825e43]">
-                                Rp {bean.pricePer250g.toLocaleString('id-ID')} / 250g
+                                Rp {bean.pricePer250g.toLocaleString('id-ID')} / {bean.unitType === 'piece' ? 'pcs' : '250g'}
                               </p>
                             </div>
                             <div className="relative w-28">
                               <input
                                 type="number"
                                 min="0"
-                                step="0.1"
+                                step={bean.unitType === 'piece' ? '1' : '0.1'}
                                 value={beanGrams[bean.slug] || ''}
                                 onChange={(e) => setBeanGrams(g => ({ ...g, [bean.slug]: e.target.value }))}
                                 className="w-full text-lg font-extrabold text-[#3b2313] bg-white border-2 border-[#e6d5b8] rounded-xl py-2 px-3 pr-8 focus:outline-none focus:border-[#e68a2e] transition-all text-right"
                                 placeholder="0"
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#825e43] font-bold text-sm">g</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#825e43] font-bold text-sm">
+                                {bean.unitType === 'piece' ? 'pcs' : 'g'}
+                              </span>
                             </div>
                           </div>
                         ))
@@ -1308,6 +1332,15 @@ export default function App() {
                     </div>
                     <p className="text-[#825e43] font-bold text-lg mt-2 font-serif italic">Nikmati Kopi Anda!</p>
                   </div>
+                  {webhookMessage && webhookMessage.includes('issue') && (
+                    <div className="bg-[#fef7e0] text-[#e68a2e] p-4 rounded-xl font-bold text-sm flex items-start gap-2 border-2 border-[#e68a2e]/20 w-full">
+                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="mb-1">Pembayaran diterima, namun ada masalah teknis dengan Midtrans.</p>
+                        <p className="text-xs font-semibold opacity-80">{webhookMessage}</p>
+                      </div>
+                    </div>
+                  )}
                   <button
                     onClick={resetPayment}
                     className="w-full bg-[#4a2e1b] hover:bg-[#3b2313] text-white font-extrabold py-4 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 uppercase tracking-wide shadow-lg border-b-[6px] border-[#2c1b10] active:border-b-0 active:translate-y-[6px]"

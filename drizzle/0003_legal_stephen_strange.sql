@@ -1,0 +1,1 @@
+ALTER TABLE "beans" ADD COLUMN "unit_type" text DEFAULT 'gram' NOT NULL;

@@ -91,6 +91,7 @@ async function startServer() {
           slug: 'default-coffee',
           description: 'Biji kopi pilihan untuk kebutuhan kantor sehari-hari',
           pricePer250g: 100000,
+          unitType: 'gram',
           isActive: true,
         });
         console.log("Seeded default bean");
@@ -155,7 +156,7 @@ async function startServer() {
   app.post("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const { name, slug, description, imageUrl, pricePer250g } = req.body;
+      const { name, slug, description, imageUrl, pricePer250g, unitType } = req.body;
       if (!name || !slug) {
         return res.status(400).json({ error: "Name and slug are required" });
       }
@@ -165,6 +166,7 @@ async function startServer() {
         description: description || null,
         imageUrl: imageUrl || null,
         pricePer250g: pricePer250g || 100000,
+        unitType: unitType || 'gram',
       }).returning();
       res.json(result[0]);
     } catch (e: any) {
@@ -182,13 +184,14 @@ async function startServer() {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
-      const { name, slug, description, imageUrl, pricePer250g, isActive } = req.body;
+      const { name, slug, description, imageUrl, pricePer250g, unitType, isActive } = req.body;
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (slug !== undefined) updateData.slug = slug;
       if (description !== undefined) updateData.description = description;
       if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
       if (pricePer250g !== undefined) updateData.pricePer250g = pricePer250g;
+      if (unitType !== undefined) updateData.unitType = unitType;
       if (isActive !== undefined) updateData.isActive = isActive;
 
       const result = await db.update(beans)
@@ -293,7 +296,7 @@ async function startServer() {
 
       let expectedAmount = 0;
       let totalGrams = 0;
-      let resolvedBeans: { slug: string; name: string; pricePer250g: number; grams: number }[] = [];
+      let resolvedBeans: { slug: string; name: string; pricePer250g: number; unitType: string; grams: number }[] = [];
 
       try {
         for (const item of requestBeans) {
@@ -311,10 +314,13 @@ async function startServer() {
           }
 
           const bean = beanResult[0];
-          const contribution = Math.round(grams * bean.pricePer250g / 250);
+          const isPiece = bean.unitType === 'piece';
+          const contribution = isPiece
+            ? Math.round(grams * bean.pricePer250g)
+            : Math.round(grams * bean.pricePer250g / 250);
           expectedAmount += contribution;
           totalGrams += grams;
-          resolvedBeans.push({ slug: bean.slug, name: bean.name, pricePer250g: bean.pricePer250g, grams });
+          resolvedBeans.push({ slug: bean.slug, name: bean.name, pricePer250g: bean.pricePer250g, unitType: bean.unitType, grams });
         }
       } catch (e) {
         console.error("Bean lookup error:", e);
@@ -360,7 +366,7 @@ async function startServer() {
             gross_amount: expectedAmount,
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
-          custom_field1: totalGrams > 0 ? `Coffee: ${totalGrams}g` : 'Coffee purchase',
+          custom_field1: totalGrams > 0 ? `Order: ${totalGrams}` : 'Order purchase',
           custom_field3: 'coffee-office',
         }),
       });
@@ -415,6 +421,19 @@ async function startServer() {
     try {
       const { orderId } = req.params;
 
+      // First, try to get the webhook message from our DB
+      let webhookMessage: string | null = null;
+      if (db) {
+        try {
+          const orderResult = await db.select().from(orders).where(eq(orders.orderId, orderId)).limit(1);
+          if (orderResult.length > 0) {
+            webhookMessage = orderResult[0].webhookMessage || null;
+          }
+        } catch (e) {
+          console.error("DB Fetch Error in status:", e);
+        }
+      }
+
       const serverKey = (process.env.MIDTRANS_SERVER_KEY || "").trim();
       const isProduction = process.env.MIDTRANS_IS_PRODUCTION === "true";
       const apiUrl = isProduction
@@ -422,7 +441,7 @@ async function startServer() {
         : "https://api.sandbox.midtrans.com/v2";
 
       if (!serverKey) {
-        return res.status(500).json({ error: "Midtrans Server Key is not configured" });
+        return res.status(500).json({ error: "Midtrans Server Key is not configured", webhookMessage });
       }
 
       const authString = Buffer.from(`${serverKey}:`).toString("base64");
@@ -453,12 +472,13 @@ async function startServer() {
       // If 404, it might mean the transaction was just created and not yet in the status API,
       // or it doesn't exist. Midtrans returns 404 for non-existent orders.
       if (data.status_code === "404") {
-        return res.json({ status: "pending" }); // Treat as pending if not found immediately
+        return res.json({ status: "pending", webhookMessage }); // Treat as pending if not found immediately
       }
 
       res.json({
         orderId: data.order_id,
         status: currentStatus,
+        webhookMessage,
       });
     } catch (error) {
       console.error("Status Error:", error);
@@ -597,7 +617,7 @@ async function startServer() {
             gross_amount: oldOrder.amount,
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
-          custom_field1: oldOrder.grams ? `Coffee: ${oldOrder.grams}g` : 'Coffee purchase',
+          custom_field1: oldOrder.grams ? `Order: ${oldOrder.grams}` : 'Order purchase',
           custom_field3: 'coffee-office',
         }),
       });
@@ -992,30 +1012,57 @@ async function startServer() {
         newStatus = "pending";
       }
 
+      // Always return 200 OK to Midtrans to acknowledge receipt
+      // Midtrans will retry if it doesn't receive 200
+      const isSuccess = successStatuses.includes(transaction_status);
+      const isFailure = failedStatuses.includes(transaction_status);
+      const isPending = transaction_status === "pending";
+
+      let message: string;
+      if (isSuccess) {
+        message = "Payment received and order status updated successfully.";
+      } else if (isFailure) {
+        message = "Payment failed or was cancelled. Order status updated.";
+      } else if (isPending) {
+        message = "Payment is pending. Waiting for customer to complete the payment.";
+      } else {
+        message = "Notification received and order status updated.";
+      }
+
+      let dbError = null;
       if (db) {
         try {
           await db.update(orders)
-            .set({ status: newStatus })
+            .set({ status: newStatus, webhookMessage: message })
             .where(eq(orders.orderId, order_id));
           console.log(`Order ${order_id} status updated to: ${newStatus}`);
         } catch (e) {
           console.error("DB Update Error in webhook:", e);
+          dbError = e instanceof Error ? e.message : "Database update failed";
           // Still return 200 to Midtrans to prevent retries for DB errors
         }
       }
 
-      // Always return 200 OK to Midtrans to acknowledge receipt
-      // Midtrans will retry if it doesn't receive 200
+      if (dbError) {
+        message = isSuccess
+          ? "Payment received from Midtrans, but we encountered an issue saving the order status. Our team has been notified."
+          : `Payment ${isPending ? "is pending" : "notification received"} from Midtrans, but we encountered an issue saving the order status. Our team has been notified.`;
+      }
+
       res.status(200).json({ 
-        message: "Notification received",
+        message,
         order_id,
-        status: newStatus
+        status: newStatus,
+        db_error: dbError || undefined
       });
     } catch (error) {
       console.error("Webhook Error:", error);
       // Return 200 even on error to prevent Midtrans from retrying
       // Log the error for investigation
-      res.status(200).json({ message: "Notification processed" });
+      res.status(200).json({ 
+        message: "Payment notification received from Midtrans, but we encountered an unexpected issue processing it. Our team has been notified.",
+        status: "unknown"
+      });
     }
   });
 
