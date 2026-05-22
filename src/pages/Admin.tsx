@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, LayoutDashboard, ArrowLeft, ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
+import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, Power, LayoutDashboard, ArrowLeft, ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('admin_token'));
@@ -158,7 +158,7 @@ export default function Admin() {
   };
 
   const handleDelete = async (bean: any) => {
-    if (!confirm(`Hapus "${bean.name}"? Bean akan dinonaktifkan.`)) return;
+    if (!confirm(`Hapus "${bean.name}"? Produk akan dinonaktifkan.`)) return;
     try {
       const res = await fetch(`/api/admin/beans/${bean.id}`, {
         method: 'DELETE',
@@ -169,6 +169,24 @@ export default function Admin() {
       }
     } catch {
       setError('Failed to delete bean');
+    }
+  };
+
+  const handleToggleActive = async (bean: any) => {
+    try {
+      const res = await fetch(`/api/admin/beans/${bean.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isActive: !bean.isActive })
+      });
+      if (res.ok) {
+        fetchBeans();
+      }
+    } catch {
+      setError('Failed to toggle product status');
     }
   };
 
@@ -382,6 +400,17 @@ export default function Admin() {
                         className="bg-[#f7ede1] hover:bg-[#e6d5b8] text-[#825e43] p-2 rounded-xl transition-all"
                       >
                         <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(bean)}
+                        className={`p-2 rounded-xl transition-all ${
+                          bean.isActive
+                            ? 'bg-[#fef7e0] hover:bg-[#e68a2e] text-[#e68a2e] hover:text-white'
+                            : 'bg-[#e6f4ea] hover:bg-[#1e8e3e] text-[#1e8e3e] hover:text-white'
+                        }`}
+                        title={bean.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                      >
+                        <Power className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(bean)}
