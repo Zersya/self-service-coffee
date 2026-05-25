@@ -708,7 +708,7 @@ async function startServer() {
       const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
       
       // Calculate per-bean income breakdown (only from completed orders)
-      // For blend orders, income is split equally among blended beans
+      // For blend orders, income is split proportionally based on each bean's price contribution
       const settledOrders = await db.execute(sql`
         SELECT o.amount, o.bean_slug, o.bean_name, o.is_blend, o.blend_data
         FROM orders o
@@ -719,14 +719,41 @@ async function startServer() {
 
       for (const row of (settledOrders || []) as any[]) {
         if (row.is_blend && row.blend_data) {
-          let blendBeans: { slug: string; name: string }[];
+          let blendBeans: { slug: string; name: string; pricePer250g: number; unitType: string; grams: number }[];
           try {
             blendBeans = JSON.parse(row.blend_data);
           } catch {
             blendBeans = [];
           }
-          const splitIncome = Math.round(parseInt(row.amount, 10) / blendBeans.length);
+
+          // Calculate each bean's proportional contribution to the total amount
+          const totalAmount = parseInt(row.amount, 10);
+          let totalContribution = 0;
+          const contributions: number[] = [];
+
           for (const b of blendBeans) {
+            const isPiece = b.unitType === 'piece';
+            const contribution = isPiece
+              ? Math.round(b.grams * b.pricePer250g)
+              : Math.round(b.grams * b.pricePer250g / 250);
+            contributions.push(contribution);
+            totalContribution += contribution;
+          }
+
+          // Split proportionally; last bean gets remainder to ensure exact total
+          let remainingAmount = totalAmount;
+          for (let i = 0; i < blendBeans.length; i++) {
+            const b = blendBeans[i];
+            let splitIncome: number;
+            if (i === blendBeans.length - 1) {
+              splitIncome = remainingAmount;
+            } else {
+              splitIncome = totalContribution > 0
+                ? Math.round(totalAmount * (contributions[i] / totalContribution))
+                : 0;
+              remainingAmount -= splitIncome;
+            }
+
             const key = b.slug || 'unknown';
             const existing = beanIncomeMap.get(key);
             if (existing) {
