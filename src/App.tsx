@@ -186,18 +186,37 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
             
             {/* Per-Bean Income Breakdown */}
             {balanceDetails.perBeanIncome && balanceDetails.perBeanIncome.length > 0 && (
-              <div className="bg-white/50 rounded-xl p-3 text-xs">
-                <div className="font-bold text-[#825e43] mb-2 uppercase tracking-wide">Pemasukan per Biji Kopi:</div>
-                <div className="space-y-1.5">
-                  {balanceDetails.perBeanIncome.map((bean) => (
-                    <div key={bean.beanSlug} className="flex justify-between items-center py-1 border-b border-[#e6d5b8]/50 last:border-0">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[#3b2313] text-[11px]">{bean.beanName}</span>
-                        <span className="text-[9px] text-[#825e43]">{bean.orderCount} pesanan</span>
+              <div className="bg-white/60 rounded-xl p-4 text-xs border border-[#e6d5b8]/60">
+                <div className="flex items-center justify-center gap-2 mb-3 pb-2 border-b border-[#e6d5b8]">
+                  <Coffee className="w-3.5 h-3.5 text-[#e68a2e]" />
+                  <span className="font-extrabold text-[#3b2313] uppercase tracking-wider text-[11px]">Pemasukan per Biji Kopi</span>
+                </div>
+                <div className="space-y-2">
+                  {balanceDetails.perBeanIncome.map((bean, index) => (
+                    <div key={bean.beanSlug} className="group">
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-[#f7ede1] text-[#825e43] flex items-center justify-center text-[10px] font-extrabold shrink-0">
+                              {index + 1}
+                            </span>
+                            <span className="font-extrabold text-[#3b2313] text-xs leading-tight">{bean.beanName}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1 ml-7">
+                            <span className="bg-[#e68a2e]/10 text-[#e68a2e] px-2 py-0.5 rounded-full text-[10px] font-bold">
+                              {bean.orderCount} pesanan
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 pt-0.5">
+                          <span className="font-extrabold text-[#e68a2e] text-sm">
+                            Rp {bean.totalIncome.toLocaleString('id-ID')}
+                          </span>
+                        </div>
                       </div>
-                      <span className="font-extrabold text-[#e68a2e] text-[11px]">
-                        Rp {bean.totalIncome.toLocaleString('id-ID')}
-                      </span>
+                      {index < balanceDetails.perBeanIncome.length - 1 && (
+                        <div className="h-px bg-[#e6d5b8]/40 mt-2 ml-7"></div>
+                      )}
                     </div>
                   ))}
                 </div>
