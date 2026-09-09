@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, AlertTriangle } from 'lucide-react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, AlertTriangle, Search, X } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
@@ -773,6 +773,7 @@ export default function App() {
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [beans, setBeans] = useState<any[]>([]);
   const [selectedBeanSlugs, setSelectedBeanSlugs] = useState<string[]>([]);
+  const [productSearch, setProductSearch] = useState('');
   
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -1135,66 +1136,108 @@ export default function App() {
                   
                   {/* Step 1: Bean Selection */}
                   <div className="bg-white rounded-2xl p-5 border-2 border-[#e6d5b8] shadow-sm">
-                    <label className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center gap-2">
-                      <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
-                      Pilih Produk
+                    <label className="block text-sm font-extrabold text-[#825e43] mb-3 uppercase tracking-wide flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <span className="bg-[#e68a2e] text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                        Pilih Produk
+                      </span>
+                      {selectedBeanSlugs.length > 0 && (
+                        <span className="bg-[#e68a2e]/10 text-[#e68a2e] text-xs font-extrabold px-2.5 py-1 rounded-full">
+                          {selectedBeanSlugs.length} dipilih
+                        </span>
+                      )}
                     </label>
                     {beans.length === 0 ? (
                       <p className="text-[#825e43] font-bold text-sm text-center py-3 bg-[#f7ede1] rounded-xl">
                         {!pricing ? 'Memuat...' : 'Belum ada produk — hubungi admin'}
                       </p>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {beans.filter(b => b.isActive).map(bean => {
-                          const isSelected = selectedBeanSlugs.includes(bean.slug);
-                          return (
-                            <button
-                              key={bean.slug}
-                              onClick={() => {
-                                setSelectedBeanSlugs(prev => {
-                                  if (isSelected) {
-                                    const next = prev.filter(s => s !== bean.slug);
-                                    setBeanGrams(g => { const n = {...g}; delete n[bean.slug]; return n; });
-                                    return next;
-                                  } else {
-                                    setBeanGrams(g => ({ ...g, [bean.slug]: '' }));
-                                    return [...prev, bean.slug];
-                                  }
-                                });
-                              }}
-                              className={`relative text-left p-4 rounded-xl border-2 transition-all ${
-                                isSelected
-                                  ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md'
-                                  : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3">
-                                {bean.imageUrl ? (
-                                  <img src={bean.imageUrl} alt={bean.name} className="w-12 h-12 rounded-lg object-cover border border-[#e6d5b8]" />
-                                ) : (
-                                  <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-[#e6d5b8]">
-                                    <Coffee className="w-6 h-6 text-[#825e43]" />
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-extrabold text-[#3b2313] text-sm truncate">{bean.name}</p>
-                                  {bean.description && (
-                                    <p className="text-xs text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
-                                  )}
-                                  <p className="text-xs font-extrabold text-[#e68a2e] mt-1">
-                                    Rp {bean.pricePer250g.toLocaleString('id-ID')} / {bean.unitType === 'piece' ? 'pcs' : '250g'}
-                                  </p>
-                                </div>
-                                {isSelected && (
-                                  <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center">
-                                    <Check className="w-3 h-3 text-white" />
-                                  </div>
-                                )}
-                              </div>
+                      <>
+                        <div className="relative mb-3">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#825e43]/60" />
+                          <input
+                            type="text"
+                            value={productSearch}
+                            onChange={(e) => setProductSearch(e.target.value)}
+                            placeholder="Cari kopi..."
+                            className="w-full text-sm font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-2.5 pl-9 pr-8 focus:outline-none focus:border-[#e68a2e] transition-all placeholder:text-[#825e43]/50"
+                          />
+                          {productSearch && (
+                            <button onClick={() => setProductSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#825e43]/60 hover:text-[#3b2313] transition-colors">
+                              <X className="w-4 h-4" />
                             </button>
-                          );
-                        })}
-                      </div>
+                          )}
+                        </div>
+                        <div className="max-h-[340px] overflow-y-auto custom-scrollbar -mr-1 pr-1">
+                          {(() => {
+                            const active = beans.filter(b => b.isActive);
+                            const filtered = productSearch
+                              ? active.filter(b =>
+                                  b.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                                  (b.description || '').toLowerCase().includes(productSearch.toLowerCase())
+                                )
+                              : active;
+                            if (filtered.length === 0) {
+                              return (
+                                <p className="text-[#825e43] font-bold text-xs text-center py-6 bg-[#f7ede1] rounded-xl">
+                                  Tidak ditemukan "{productSearch}"
+                                </p>
+                              );
+                            }
+                            return (
+                              <div className="grid grid-cols-2 gap-3">
+                                {filtered.map(bean => {
+                                  const isSelected = selectedBeanSlugs.includes(bean.slug);
+                                  return (
+                                    <button
+                                      key={bean.slug}
+                                      onClick={() => {
+                                        setSelectedBeanSlugs(prev => {
+                                          if (isSelected) {
+                                            const next = prev.filter(s => s !== bean.slug);
+                                            setBeanGrams(g => { const n = {...g}; delete n[bean.slug]; return n; });
+                                            return next;
+                                          } else {
+                                            setBeanGrams(g => ({ ...g, [bean.slug]: '' }));
+                                            return [...prev, bean.slug];
+                                          }
+                                        });
+                                      }}
+                                      className={`relative text-center rounded-xl border-2 transition-all overflow-hidden ${
+                                        isSelected
+                                          ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md ring-1 ring-[#e68a2e]/20'
+                                          : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
+                                      }`}
+                                    >
+                                      {isSelected && (
+                                        <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center shadow-sm z-10">
+                                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                                        </div>
+                                      )}
+                                      <div className="aspect-square bg-white flex items-center justify-center border-b border-[#e6d5b8]">
+                                        {bean.imageUrl ? (
+                                          <img src={bean.imageUrl} alt={bean.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                          <Coffee className="w-10 h-10 text-[#d4b896]" />
+                                        )}
+                                      </div>
+                                      <div className="px-3 py-2.5">
+                                        <p className={`font-extrabold text-xs truncate ${isSelected ? 'text-[#e68a2e]' : 'text-[#3b2313]'}`}>{bean.name}</p>
+                                        {bean.description && (
+                                          <p className="text-[10px] text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                                        )}
+                                        <p className="text-[11px] font-extrabold text-[#e68a2e] mt-1.5">
+                                          Rp {bean.pricePer250g.toLocaleString('id-ID')}<span className="font-bold text-[#825e43]"> / {bean.unitType === 'piece' ? 'pcs' : '250g'}</span>
+                                        </p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </>
                     )}
                   </div>
 
