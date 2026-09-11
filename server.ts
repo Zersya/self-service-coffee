@@ -73,6 +73,42 @@ function cleanExpiredTokens() {
 }
 setInterval(cleanExpiredTokens, 60 * 60 * 1000);
 
+async function deductStockForOrder(order: typeof orders.$inferSelect) {
+  if (!db) return;
+  const items: { slug: string; grams: number }[] = [];
+  if (order.isBlend && order.blendData) {
+    try {
+      const parsed = JSON.parse(order.blendData);
+      if (Array.isArray(parsed)) {
+        for (const b of parsed) {
+          const g = parseFloat(b.grams);
+          if (b.slug && !isNaN(g) && g > 0) items.push({ slug: b.slug, grams: g });
+        }
+      }
+    } catch { /* malformed blend_data → no items */ }
+  } else if (order.beanSlug) {
+    const g = parseFloat(order.grams);
+    if (!isNaN(g) && g > 0) items.push({ slug: order.beanSlug, grams: g });
+  }
+  if (items.length === 0) return;
+  try {
+    await db.transaction(async (tx) => {
+      // Atomic claim: only the first caller to flip stockDeducted proceeds
+      const claimed = await tx.update(orders)
+        .set({ stockDeducted: true })
+        .where(and(eq(orders.id, order.id), eq(orders.stockDeducted, false)))
+        .returning({ id: orders.id });
+      if (claimed.length === 0) return;
+      for (const item of items) {
+        await tx.execute(sql`UPDATE beans SET stock = stock - ${item.grams} WHERE slug = ${item.slug} AND stock IS NOT NULL`);
+      }
+    });
+    console.log(`Stock deducted for order ${order.orderId}`);
+  } catch (e) {
+    console.error(`Stock deduction failed for order ${order.orderId}:`, e);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -87,9 +123,9 @@ async function startServer() {
       const existingBeans = await db.select().from(beans).limit(1);
       if (existingBeans.length === 0) {
         await db.insert(beans).values({
-          name: 'Default Coffee',
-          slug: 'default-coffee',
-          description: 'Biji kopi pilihan untuk kebutuhan kantor sehari-hari',
+          name: 'Produk Default',
+          slug: 'default-product',
+          description: 'Produk kebutuhan sehari-hari',
           pricePer250g: 100000,
           unitType: 'gram',
           isActive: true,
@@ -156,7 +192,7 @@ async function startServer() {
   app.post("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const { name, slug, description, imageUrl, pricePer250g, unitType } = req.body;
+      const { name, slug, description, imageUrl, pricePer250g, unitType, stock } = req.body;
       if (!name || !slug) {
         return res.status(400).json({ error: "Name and slug are required" });
       }
@@ -167,6 +203,7 @@ async function startServer() {
         imageUrl: imageUrl || null,
         pricePer250g: pricePer250g || 100000,
         unitType: unitType || 'gram',
+        stock: stock === undefined || stock === null || stock === '' ? null : String(parseFloat(stock)),
       }).returning();
       res.json(result[0]);
     } catch (e: any) {
@@ -184,7 +221,7 @@ async function startServer() {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
-      const { name, slug, description, imageUrl, pricePer250g, unitType, isActive } = req.body;
+      const { name, slug, description, imageUrl, pricePer250g, unitType, isActive, stock } = req.body;
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (slug !== undefined) updateData.slug = slug;
@@ -193,6 +230,7 @@ async function startServer() {
       if (pricePer250g !== undefined) updateData.pricePer250g = pricePer250g;
       if (unitType !== undefined) updateData.unitType = unitType;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (stock !== undefined) updateData.stock = stock === null || stock === '' ? null : String(parseFloat(stock));
 
       const result = await db.update(beans)
         .set(updateData)
@@ -314,6 +352,12 @@ async function startServer() {
           }
 
           const bean = beanResult[0];
+          if (bean.stock !== null && bean.stock !== undefined) {
+            const stock = parseFloat(bean.stock as unknown as string);
+            if (isNaN(stock) || grams > stock) {
+              return res.status(400).json({ error: `Stok tidak cukup untuk ${bean.name} (sisa ${isNaN(stock) ? 0 : stock})` });
+            }
+          }
           const isPiece = bean.unitType === 'piece';
           const contribution = isPiece
             ? Math.round(grams * bean.pricePer250g)
@@ -350,7 +394,7 @@ async function startServer() {
         return res.status(500).json({ error: "Midtrans Server Key is not configured" });
       }
 
-      const orderId = `coffee-${uuidv4()}`;
+      const orderId = `kopikita-${uuidv4()}`;
       const authString = Buffer.from(`${serverKey}:`).toString("base64");
 
       const response = await fetch(snapApiUrl, {
@@ -367,7 +411,7 @@ async function startServer() {
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
           custom_field1: totalGrams > 0 ? `Order: ${totalGrams}` : 'Order purchase',
-          custom_field3: 'coffee-office',
+          custom_field3: 'kopi-kita',
         }),
       });
 
@@ -464,6 +508,10 @@ async function startServer() {
           await db.update(orders)
             .set({ status: currentStatus })
             .where(eq(orders.orderId, orderId));
+          if (currentStatus === "settlement") {
+            const updated = await db.select().from(orders).where(eq(orders.orderId, orderId)).limit(1);
+            if (updated.length > 0) await deductStockForOrder(updated[0]);
+          }
         } catch (e) {
           console.error("DB Update Error:", e);
         }
@@ -601,7 +649,7 @@ async function startServer() {
       const authString = Buffer.from(`${serverKey}:`).toString("base64");
 
       // Create NEW order with fresh UUID (Midtrans doesn't allow reusing order_id)
-      const newOrderId = `coffee-${uuidv4()}`;
+      const newOrderId = `kopikita-${uuidv4()}`;
       console.log("[Continue Payment] Creating new order:", newOrderId);
 
       const response = await fetch(snapApiUrl, {
@@ -618,7 +666,7 @@ async function startServer() {
           },
           enabled_payments: ["qris", "gopay", "shopeepay"],
           custom_field1: oldOrder.grams ? `Order: ${oldOrder.grams}` : 'Order purchase',
-          custom_field3: 'coffee-office',
+          custom_field3: 'kopi-kita',
         }),
       });
 
@@ -1063,6 +1111,10 @@ async function startServer() {
             .set({ status: newStatus, webhookMessage: message })
             .where(eq(orders.orderId, order_id));
           console.log(`Order ${order_id} status updated to: ${newStatus}`);
+          if (newStatus === "settlement") {
+            const updated = await db.select().from(orders).where(eq(orders.orderId, order_id)).limit(1);
+            if (updated.length > 0) await deductStockForOrder(updated[0]);
+          }
         } catch (e) {
           console.error("DB Update Error in webhook:", e);
           dbError = e instanceof Error ? e.message : "Database update failed";

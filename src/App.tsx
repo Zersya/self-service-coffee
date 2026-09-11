@@ -189,7 +189,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
               <div className="bg-white/60 rounded-xl p-4 text-xs border border-[#e6d5b8]/60">
                 <div className="flex items-center justify-center gap-2 mb-3 pb-2 border-b border-[#e6d5b8]">
                   <Coffee className="w-3.5 h-3.5 text-[#e68a2e]" />
-                  <span className="font-extrabold text-[#3b2313] uppercase tracking-wider text-[11px]">Pemasukan per Biji Kopi</span>
+                  <span className="font-extrabold text-[#3b2313] uppercase tracking-wider text-[11px]">Pemasukan per Produk</span>
                 </div>
                 <div className="space-y-2">
                   {balanceDetails.perBeanIncome.map((bean, index) => (
@@ -327,7 +327,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
               </div>
               <div className="w-full h-px bg-[#e6d5b8] my-2"></div>
               <div className="flex flex-col gap-2">
-                <span className="text-[#825e43] font-bold">Kopi</span>
+                <span className="text-[#825e43] font-bold">Produk</span>
                 {selectedOrder.isBlend && selectedOrder.blendData ? (
                   (() => {
                     try {
@@ -904,7 +904,7 @@ export default function App() {
       .catch(err => setSnapError('Failed to load configuration'));
   }, []);
 
-  useEffect(() => {
+  const fetchPricing = () => {
     fetch('/api/pricing')
       .then(res => res.json())
       .then(data => {
@@ -916,12 +916,16 @@ export default function App() {
         }
         if (data.beans && data.beans.length > 0) {
           setBeans(data.beans);
-          setSelectedBeanSlugs(prev => prev.filter(s => data.beans.some((b: any) => b.slug === s && b.isActive)));
+          setSelectedBeanSlugs(prev => prev.filter(s => data.beans.some((b: { slug: string; isActive: boolean }) => b.slug === s && b.isActive)));
         } else if (data.beans && data.beans.length === 0) {
           setSelectedBeanSlugs([]);
         }
       })
       .catch(err => setPricingError("Failed to load pricing"));
+  };
+
+  useEffect(() => {
+    fetchPricing();
   }, []);
 
   useEffect(() => {
@@ -939,6 +943,9 @@ export default function App() {
             if (['settlement', 'capture', 'expire', 'cancel', 'deny'].includes(data.status)) {
               clearInterval(interval);
             }
+            if (data.status === 'settlement' || data.status === 'capture') {
+              fetchPricing();
+            }
           }
         } catch (err) {}
       }, 3000);
@@ -953,10 +960,14 @@ export default function App() {
     }
     for (const slug of selectedBeanSlugs) {
       const g = parseFloat(beanGrams[slug] || '0');
+      const bean = beans.find(b => b.slug === slug);
       if (isNaN(g) || g <= 0) {
-        const bean = beans.find(b => b.slug === slug);
         const label = bean?.unitType === 'piece' ? 'jumlah' : 'gramasi';
         setError(`Masukkan ${label} untuk ${bean?.name || slug}.`);
+        return;
+      }
+      if (bean && bean.stock !== null && bean.stock !== undefined && g > parseFloat(bean.stock)) {
+        setError(`Stok ${bean.name} tidak cukup (sisa ${parseFloat(bean.stock)}).`);
         return;
       }
     }
@@ -1093,12 +1104,12 @@ export default function App() {
         
         {/* Header matching poster style */}
         <div className="text-center space-y-2 mb-2 mt-4">
-          <h2 className="text-xl font-extrabold text-[#fdf4e3] uppercase tracking-wider">Patungan</h2>
+          <h2 className="text-xl font-extrabold text-[#fdf4e3] uppercase tracking-wider">Koperasi</h2>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-[#fdf4e3] uppercase tracking-widest leading-tight">
-            Minum Kopi
+            Kopi Kita
           </h1>
           <div className="mt-6 mb-4 inline-block bg-[#e68a2e] text-white px-6 py-2 rounded-full font-bold text-sm uppercase tracking-wider shadow-lg border border-[#e68a2e]/50 shadow-[#e68a2e]/40">
-            Biar bisa nambah alat kopi!
+            Beli apa aja, patungan bareng!
           </div>
         </div>
 
@@ -1159,7 +1170,7 @@ export default function App() {
                             type="text"
                             value={productSearch}
                             onChange={(e) => setProductSearch(e.target.value)}
-                            placeholder="Cari kopi..."
+                            placeholder="Cari produk..."
                             className="w-full text-sm font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-2.5 pl-9 pr-8 focus:outline-none focus:border-[#e68a2e] transition-all placeholder:text-[#825e43]/50"
                           />
                           {productSearch && (
@@ -1188,9 +1199,11 @@ export default function App() {
                               <div className="grid grid-cols-2 gap-3">
                                 {filtered.map(bean => {
                                   const isSelected = selectedBeanSlugs.includes(bean.slug);
+                                  const outOfStock = bean.stock !== null && bean.stock !== undefined && parseFloat(bean.stock) <= 0;
                                   return (
                                     <button
                                       key={bean.slug}
+                                      disabled={outOfStock}
                                       onClick={() => {
                                         setSelectedBeanSlugs(prev => {
                                           if (isSelected) {
@@ -1207,11 +1220,16 @@ export default function App() {
                                         isSelected
                                           ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md ring-1 ring-[#e68a2e]/20'
                                           : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
-                                      }`}
+                                      } ${outOfStock ? 'opacity-60 cursor-not-allowed' : ''}`}
                                     >
                                       {isSelected && (
                                         <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center shadow-sm z-10">
                                           <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                                        </div>
+                                      )}
+                                      {outOfStock && (
+                                        <div className="absolute top-2 left-2 bg-[#d93025] text-white text-[10px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full shadow-sm z-10">
+                                          Habis
                                         </div>
                                       )}
                                       <div className="aspect-square bg-white flex items-center justify-center border-b border-[#e6d5b8]">
@@ -1228,6 +1246,11 @@ export default function App() {
                                         )}
                                         <p className="text-[11px] font-extrabold text-[#e68a2e] mt-1.5">
                                           Rp {bean.pricePer250g.toLocaleString('id-ID')}<span className="font-bold text-[#825e43]"> / {bean.unitType === 'piece' ? 'pcs' : '250g'}</span>
+                                        </p>
+                                        <p className={`text-[10px] font-bold mt-0.5 ${outOfStock ? 'text-[#d93025]' : 'text-[#825e43]'}`}>
+                                          {bean.stock !== null && bean.stock !== undefined
+                                            ? (outOfStock ? 'Stok habis' : `Sisa: ${parseFloat(bean.stock)}${bean.unitType === 'piece' ? ' pcs' : 'g'}`)
+                                            : 'Stok: ∞'}
                                         </p>
                                       </div>
                                     </button>
@@ -1248,7 +1271,7 @@ export default function App() {
                         ? 'Jumlah / Gramasi'
                         : selectedBeans.every(b => b.unitType === 'piece')
                           ? 'Jumlah per Item'
-                          : 'Gramasi per Kopi'}
+                          : 'Gramasi per Produk'}
                     </label>
                     <div className="space-y-3">
                       {selectedBeans.length === 0 ? (
@@ -1268,6 +1291,7 @@ export default function App() {
                               <input
                                 type="number"
                                 min="0"
+                                max={bean.stock !== null && bean.stock !== undefined ? parseFloat(bean.stock) : undefined}
                                 step={bean.unitType === 'piece' ? '1' : '0.1'}
                                 value={beanGrams[bean.slug] || ''}
                                 onChange={(e) => setBeanGrams(g => ({ ...g, [bean.slug]: e.target.value }))}
@@ -1392,7 +1416,7 @@ export default function App() {
                       <p className="text-sm font-bold text-[#825e43] uppercase tracking-wide mb-1">Nominal Dibayar</p>
                       <p className="text-2xl font-extrabold text-[#e68a2e]">Rp {amount.toLocaleString('id-ID')}</p>
                     </div>
-                    <p className="text-[#825e43] font-bold text-lg mt-2 font-serif italic">Nikmati Kopi Anda!</p>
+                    <p className="text-[#825e43] font-bold text-lg mt-2 font-serif italic">Terima kasih sudah berbelanja!</p>
                   </div>
                   {webhookMessage && webhookMessage.includes('issue') && (
                     <div className="bg-[#fef7e0] text-[#e68a2e] p-4 rounded-xl font-bold text-sm flex items-start gap-2 border-2 border-[#e68a2e]/20 w-full">

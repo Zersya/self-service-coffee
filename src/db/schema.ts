@@ -8,6 +8,7 @@ export const beans = pgTable('beans', {
   imageUrl: text('image_url'),
   pricePer250g: integer('price_per_250g').notNull().default(100000),
   unitType: text('unit_type').notNull().default('gram'), // 'gram' or 'piece'
+  stock: numeric('stock'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow(),
 });
@@ -26,6 +27,7 @@ export const orders = pgTable('orders', {
   snapToken: text('snap_token'),
   mdrFee: integer('mdr_fee').notNull().default(0),
   netAmount: integer('net_amount').notNull().default(0),
+  stockDeducted: boolean('stock_deducted').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -48,4 +50,22 @@ export const disbursements = pgTable('disbursements', {
   requestedAt: timestamp('requested_at').defaultNow(),
   processedAt: timestamp('processed_at'),
   processedBy: text('processed_by'),
+});
+
+export const members = pgTable('members', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email'),
+  phone: text('phone'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const savingsTransactions = pgTable('savings_transactions', {
+  id: serial('id').primaryKey(),
+  memberId: integer('member_id').notNull().references(() => members.id),
+  type: text('type').notNull(), // 'deposit' | 'withdrawal'
+  amount: integer('amount').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow(),
 });

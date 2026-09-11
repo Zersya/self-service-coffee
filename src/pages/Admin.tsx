@@ -20,6 +20,7 @@ export default function Admin() {
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formPrice, setFormPrice] = useState('100000');
   const [formUnitType, setFormUnitType] = useState<'gram' | 'piece'>('gram');
+  const [formStock, setFormStock] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -100,6 +101,7 @@ export default function Admin() {
     setFormImageUrl('');
     setFormPrice('100000');
     setFormUnitType('gram');
+    setFormStock('');
     setFormError(null);
     setShowForm(true);
   };
@@ -112,6 +114,7 @@ export default function Admin() {
     setFormImageUrl(bean.imageUrl || '');
     setFormPrice(bean.pricePer250g.toString());
     setFormUnitType(bean.unitType || 'gram');
+    setFormStock(bean.stock !== null && bean.stock !== undefined ? String(bean.stock) : '');
     setFormError(null);
     setShowForm(true);
   };
@@ -127,7 +130,8 @@ export default function Admin() {
         description: formDescription || null,
         imageUrl: formImageUrl || null,
         pricePer250g: parseInt(formPrice),
-        unitType: formUnitType
+        unitType: formUnitType,
+        stock: formStock === '' ? null : parseFloat(formStock)
       };
 
       const url = editingBean
@@ -319,7 +323,7 @@ export default function Admin() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-extrabold text-[#3b2313] uppercase tracking-widest">Admin</h1>
-                  <p className="text-xs font-bold text-[#825e43]">Kelola Biji Kopi</p>
+                  <p className="text-xs font-bold text-[#825e43]">Kelola Produk</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -392,6 +396,9 @@ export default function Admin() {
                       {bean.description && <p className="text-xs text-[#825e43] mt-1 line-clamp-1">{bean.description}</p>}
                       <p className="text-sm font-extrabold text-[#e68a2e] mt-1">
                         Rp {bean.pricePer250g.toLocaleString('id-ID')} / {bean.unitType === 'piece' ? 'pcs' : '250g'}
+                        <span className={`text-xs font-bold ml-1.5 ${bean.stock !== null && bean.stock !== undefined && parseFloat(bean.stock) <= 0 ? 'text-[#d93025]' : 'text-[#825e43]'}`}>
+                          · Stok: {bean.stock !== null && bean.stock !== undefined ? `${parseFloat(bean.stock)} ${bean.unitType === 'piece' ? 'pcs' : 'g'}` : '∞'}
+                        </span>
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -604,7 +611,7 @@ export default function Admin() {
                   <option value="gram">Gram (kopi / per 250g)</option>
                   <option value="piece">Satuan (pcs / pack / bottle)</option>
                 </select>
-                <p className="text-[10px] font-bold text-[#825e43] mt-1">Pilih "Gram" untuk kopi, "Satuan" untuk susu, coklat, dll.</p>
+                <p className="text-[10px] font-bold text-[#825e43] mt-1">Pilih "Gram" untuk barang timbangan, "Satuan" untuk pcs/pack/botol.</p>
               </div>
               <div>
                 <label className="block text-xs font-extrabold text-[#825e43] mb-2 uppercase tracking-wide">
@@ -618,6 +625,21 @@ export default function Admin() {
                   min="0"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-extrabold text-[#825e43] mb-2 uppercase tracking-wide">
+                  {formUnitType === 'gram' ? 'Stok (gram)' : 'Stok (pcs)'}
+                </label>
+                <input
+                  type="number"
+                  value={formStock}
+                  onChange={e => setFormStock(e.target.value)}
+                  className="w-full bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-3 px-4 font-bold text-[#3b2313] focus:outline-none focus:border-[#e68a2e] focus:bg-white transition-all"
+                  min="0"
+                  step={formUnitType === 'piece' ? '1' : '0.1'}
+                  placeholder="Kosongkan untuk stok tak terbatas"
+                />
+                <p className="text-[10px] font-bold text-[#825e43] mt-1">Stok berkurang otomatis saat pembayaran berhasil.</p>
               </div>
               <div className="flex gap-3 pt-2">
                 <button
