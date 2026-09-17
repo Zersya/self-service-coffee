@@ -1196,7 +1196,7 @@ export default function App() {
                               );
                             }
                             return (
-                              <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2">
                                 {filtered.map(bean => {
                                   const isSelected = selectedBeanSlugs.includes(bean.slug);
                                   const outOfStock = bean.stock !== null && bean.stock !== undefined && parseFloat(bean.stock) <= 0;
@@ -1216,43 +1216,45 @@ export default function App() {
                                           }
                                         });
                                       }}
-                                      className={`relative text-center rounded-xl border-2 transition-all overflow-hidden ${
+                                      className={`relative w-full flex items-center gap-3 text-left rounded-xl border-2 p-2.5 transition-all ${
                                         isSelected
                                           ? 'bg-[#fff8eb] border-[#e68a2e] shadow-md ring-1 ring-[#e68a2e]/20'
                                           : 'bg-[#f7ede1] border-[#e6d5b8] hover:border-[#e68a2e]/50'
                                       } ${outOfStock ? 'opacity-60 cursor-not-allowed' : ''}`}
                                     >
-                                      {isSelected && (
-                                        <div className="absolute top-2 right-2 w-5 h-5 bg-[#e68a2e] rounded-full flex items-center justify-center shadow-sm z-10">
-                                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
-                                        </div>
-                                      )}
-                                      {outOfStock && (
-                                        <div className="absolute top-2 left-2 bg-[#d93025] text-white text-[10px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full shadow-sm z-10">
-                                          Habis
-                                        </div>
-                                      )}
-                                      <div className="aspect-square bg-white flex items-center justify-center border-b border-[#e6d5b8]">
+                                      <div className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-white border border-[#e6d5b8] flex items-center justify-center">
                                         {bean.imageUrl ? (
                                           <img src={bean.imageUrl} alt={bean.name} className="w-full h-full object-cover" />
                                         ) : (
-                                          <Coffee className="w-10 h-10 text-[#d4b896]" />
+                                          <Coffee className="w-6 h-6 text-[#d4b896]" />
+                                        )}
+                                        {outOfStock && (
+                                          <span className="absolute inset-x-0 bottom-0 bg-[#d93025] text-white text-[9px] font-extrabold uppercase tracking-wide text-center py-0.5">
+                                            Habis
+                                          </span>
                                         )}
                                       </div>
-                                      <div className="px-3 py-2.5">
-                                        <p className={`font-extrabold text-xs truncate ${isSelected ? 'text-[#e68a2e]' : 'text-[#3b2313]'}`}>{bean.name}</p>
+                                      <div className="flex-1 min-w-0">
+                                        <p className={`font-extrabold text-sm leading-snug ${isSelected ? 'text-[#e68a2e]' : 'text-[#3b2313]'}`}>{bean.name}</p>
                                         {bean.description && (
-                                          <p className="text-[10px] text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
+                                          <p className="text-[11px] text-[#825e43] line-clamp-1 mt-0.5">{bean.description}</p>
                                         )}
-                                        <p className="text-[11px] font-extrabold text-[#e68a2e] mt-1.5">
-                                          Rp {bean.pricePer250g.toLocaleString('id-ID')}<span className="font-bold text-[#825e43]"> / {bean.unitType === 'piece' ? 'pcs' : '250g'}</span>
-                                        </p>
-                                        <p className={`text-[10px] font-bold mt-0.5 ${outOfStock ? 'text-[#d93025]' : 'text-[#825e43]'}`}>
-                                          {bean.stock !== null && bean.stock !== undefined
-                                            ? (outOfStock ? 'Stok habis' : `Sisa: ${parseFloat(bean.stock)}${bean.unitType === 'piece' ? ' pcs' : 'g'}`)
-                                            : 'Stok: ∞'}
+                                        <p className="text-[11px] mt-1">
+                                          <span className="font-extrabold text-[#e68a2e]">Rp {bean.pricePer250g.toLocaleString('id-ID')}</span>
+                                          <span className="font-bold text-[#825e43]"> / {bean.unitType === 'piece' ? 'pcs' : '250g'}</span>
+                                          <span className={`font-bold ${outOfStock ? 'text-[#d93025]' : 'text-[#825e43]'}`}>
+                                            {' · '}
+                                            {bean.stock !== null && bean.stock !== undefined
+                                              ? (outOfStock ? 'Stok habis' : `Sisa: ${parseFloat(bean.stock)}${bean.unitType === 'piece' ? ' pcs' : 'g'}`)
+                                              : 'Stok: ∞'}
+                                          </span>
                                         </p>
                                       </div>
+                                      <span className={`w-6 h-6 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-all ${
+                                        isSelected ? 'bg-[#e68a2e] border-[#e68a2e]' : 'border-[#d4b896] bg-white'
+                                      }`}>
+                                        {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                                      </span>
                                     </button>
                                   );
                                 })}
