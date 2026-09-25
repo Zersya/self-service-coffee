@@ -1,11 +1,51 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, AlertTriangle, Search, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Coffee, QrCode, CheckCircle2, XCircle, Loader2, RefreshCw, History, Wallet, LayoutDashboard, Hourglass, CreditCard, Check, ArrowLeftRight, Plus, AlertTriangle, Search, X, CalendarDays } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 
 declare global {
   interface Window {
     snap: any;
   }
+}
+
+type DateFilter = 'this_month' | 'last_month' | 'custom';
+
+function formatDateInput(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getDashboardRange(filter: DateFilter, customFrom: string, customTo: string): { from: Date; to: Date } | null {
+  const now = new Date();
+  if (filter === 'this_month') {
+    return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: now };
+  }
+  if (filter === 'last_month') {
+    return {
+      from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      to: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999),
+    };
+  }
+  if (!customFrom || !customTo) return null;
+  const [fy, fm, fd] = customFrom.split('-').map(Number);
+  const [ty, tm, td] = customTo.split('-').map(Number);
+  if ([fy, fm, fd, ty, tm, td].some(isNaN)) return null;
+  const fromStart = new Date(fy, fm - 1, fd);
+  const toStart = new Date(ty, tm - 1, td);
+  const lo = fromStart <= toStart ? fromStart : toStart;
+  const hiDate = fromStart >= toStart ? fromStart : toStart;
+  return { from: lo, to: new Date(hiDate.getFullYear(), hiDate.getMonth(), hiDate.getDate(), 23, 59, 59, 999) };
+}
+
+function getOrderLabel(order: any, beans?: any[]): string {
+  if (order.isBlend && order.blendData) {
+    try {
+      const d = JSON.parse(order.blendData);
+      return d.map((b: any) => `${b.name} ${b.grams}${b.unitType === 'piece' ? 'pcs' : 'g'}`).join(' + ');
+    } catch { return 'Campuran'; }
+  }
+  const singleBean = beans?.find(b => b.slug === order.beanSlug);
+  const unitLabel = singleBean?.unitType === 'piece' ? 'pcs' : 'g';
+  return (singleBean?.name || order.beanName || (order.beanSlug ? order.beanSlug : 'Kopi')) + ` ${order.grams}${unitLabel}`;
 }
 
 function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (grams: string, amount: number, orderId: string, snapToken: string | null, blendData?: string | null, beanSlug?: string | null) => void, turnstileSiteKey?: string | null, beans?: any[] }) {
@@ -28,8 +68,16 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
   } | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  
+
+  // History filter & search states
+  const [dateFilter, setDateFilter] = useState<DateFilter>('this_month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const historyListRef = useRef<HTMLDivElement>(null);
+
   // Modal states
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -37,11 +85,52 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
   const [regeneratingToken, setRegeneratingToken] = useState(false);
   const [orderActionError, setOrderActionError] = useState<string | null>(null);
 
+  const range = useMemo(() => getDashboardRange(dateFilter, customFrom, customTo), [dateFilter, customFrom, customTo]);
+  const rangeKey = range ? `${range.from.toISOString()}|${range.to.toISOString()}` : '';
+
+  const selectDateFilter = (filter: DateFilter) => {
+    if (filter === 'custom' && (!customFrom || !customTo)) {
+      const now = new Date();
+      setCustomFrom(formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setCustomTo(formatDateInput(now));
+    }
+    setDateFilter(filter);
+  };
+
+  const rangeLabel = useMemo(() => {
+    if (!range) return '';
+    const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+    const from = range.from.toLocaleDateString('id-ID', opts);
+    const to = range.to.toLocaleDateString('id-ID', { ...opts, year: 'numeric' });
+    return `${from} – ${to}`;
+  }, [rangeKey]);
+
+  const searchQuery = historySearch.trim().toLowerCase();
+  const visibleHistory = searchQuery
+    ? history.filter(order =>
+        getOrderLabel(order, beans).toLowerCase().includes(searchQuery) ||
+        (order.status || '').toLowerCase().includes(searchQuery) ||
+        (order.orderId || '').toLowerCase().includes(searchQuery) ||
+        String(order.amount).includes(searchQuery) ||
+        `rp ${order.amount.toLocaleString('id-ID')}`.includes(searchQuery) ||
+        new Date(order.createdAt).toLocaleDateString('id-ID').toLowerCase().includes(searchQuery)
+      )
+    : history;
+
   useEffect(() => {
+    historyListRef.current?.scrollTo({ top: 0 });
+  }, [dateFilter, customFrom, customTo, historySearch]);
+
+  useEffect(() => {
+    if (!range) return;
+    let cancelled = false;
+    setRefreshing(true);
+    const params = `from=${encodeURIComponent(range.from.toISOString())}&to=${encodeURIComponent(range.to.toISOString())}`;
     Promise.all([
-      fetch('/api/balance').then(res => res.json()),
-      fetch('/api/history').then(res => res.json())
+      fetch(`/api/balance?${params}`).then(res => res.json()),
+      fetch(`/api/history?${params}`).then(res => res.json())
     ]).then(([balanceData, historyData]) => {
+      if (cancelled) return;
       if (balanceData.error || historyData.error) {
         setDbError(balanceData.error || historyData.error);
       } else {
@@ -50,11 +139,15 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
         setHistory(historyData);
       }
       setLoading(false);
+      setRefreshing(false);
     }).catch(err => {
+      if (cancelled) return;
       setDbError("Failed to connect to server");
       setLoading(false);
+      setRefreshing(false);
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [rangeKey]);
 
   // Order modal handlers
   const handleOrderClick = (order: any) => {
@@ -121,9 +214,10 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
       });
       
       const data = await res.json();
-      
+
       if (data.success) {
-        const historyRes = await fetch('/api/history');
+        const params = range ? `?from=${encodeURIComponent(range.from.toISOString())}&to=${encodeURIComponent(range.to.toISOString())}` : '';
+        const historyRes = await fetch(`/api/history${params}`);
         const historyData = await historyRes.json();
         setHistory(historyData);
         
@@ -170,6 +264,9 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
           <div className="mt-4 w-full space-y-2">
             {/* Income Breakdown */}
             <div className="bg-white/50 rounded-xl p-3 text-xs">
+              {rangeLabel && (
+                <p className="text-[9px] font-extrabold text-[#825e43]/70 uppercase tracking-widest mb-1.5 text-right">Periode {rangeLabel}</p>
+              )}
               <div className="flex justify-between font-bold text-[#825e43] mb-1">
                 <span>Total Pemasukan:</span>
                 <span>Rp {balanceDetails.totalIncome.toLocaleString('id-ID')}</span>
@@ -247,33 +344,94 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
         )}
       </div>
 
-      <h3 className="font-bold text-[#825e43] mb-4 flex items-center gap-2 uppercase tracking-wider text-sm">
+      <h3 className="font-bold text-[#825e43] mb-3 flex items-center gap-2 uppercase tracking-wider text-sm">
         <History className="w-5 h-5 text-[#e68a2e]" /> Riwayat Pesanan
+        {refreshing && <Loader2 className="w-4 h-4 animate-spin text-[#e68a2e] ml-auto" />}
       </h3>
-      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+
+      {/* Period filter */}
+      <div className="flex gap-2 mb-3">
+        {([
+          { key: 'this_month', label: 'Bulan Ini' },
+          { key: 'last_month', label: 'Bulan Lalu' },
+          { key: 'custom', label: 'Kustom' },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => selectDateFilter(key)}
+            className={`flex-1 py-2 px-2 rounded-xl text-[11px] font-extrabold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5 ${
+              dateFilter === key
+                ? 'bg-[#e68a2e] text-white shadow-md'
+                : 'bg-[#f7ede1] text-[#825e43] hover:bg-[#e6d5b8] border-2 border-[#e6d5b8]'
+            }`}
+          >
+            {key === 'custom' && <CalendarDays className="w-3.5 h-3.5" />}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {dateFilter === 'custom' && (
+        <div className="flex gap-2 mb-3">
+          <div className="flex-1">
+            <label className="block text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-1">Dari</label>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={e => setCustomFrom(e.target.value)}
+              className="w-full text-xs font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-2 px-3 focus:outline-none focus:border-[#e68a2e] transition-all"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-1">Sampai</label>
+            <input
+              type="date"
+              value={customTo}
+              onChange={e => setCustomTo(e.target.value)}
+              className="w-full text-xs font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-2 px-3 focus:outline-none focus:border-[#e68a2e] transition-all"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Search within the active period */}
+      <div className="relative mb-2">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#825e43]/60" />
+        <input
+          type="text"
+          value={historySearch}
+          onChange={e => setHistorySearch(e.target.value)}
+          placeholder="Cari pesanan..."
+          className="w-full text-sm font-bold text-[#3b2313] bg-[#f7ede1] border-2 border-[#e6d5b8] rounded-xl py-2.5 pl-9 pr-8 focus:outline-none focus:border-[#e68a2e] transition-all placeholder:text-[#825e43]/50"
+        />
+        {historySearch && (
+          <button onClick={() => setHistorySearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#825e43]/60 hover:text-[#3b2313] transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mb-2 px-1">
+        <p className="text-[10px] font-bold text-[#825e43] uppercase tracking-wide">{rangeLabel}</p>
+        <p className="text-[10px] font-bold text-[#825e43]">{visibleHistory.length} pesanan</p>
+      </div>
+
+      <div ref={historyListRef} className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
         {history.length === 0 ? (
-          <p className="text-[#825e43] text-sm text-center py-8 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">Belum ada pesanan</p>
+          <p className="text-[#825e43] text-sm text-center py-8 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">Tidak ada pesanan pada periode ini</p>
+        ) : visibleHistory.length === 0 ? (
+          <p className="text-[#825e43] text-sm text-center py-8 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">Tidak ditemukan "{historySearch}"</p>
         ) : (
-          history.map(order => (
-            <div 
-              key={order.id} 
+          visibleHistory.map(order => (
+            <div
+              key={order.id}
               onClick={() => handleOrderClick(order)}
               className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4 flex justify-between items-center cursor-pointer hover:border-[#e68a2e] hover:shadow-md transition-all group"
             >
               <div>
                 <p className="font-extrabold text-[#3b2313] text-lg group-hover:text-[#e68a2e] transition-colors">Rp {order.amount.toLocaleString('id-ID')}</p>
                 <p className="text-xs font-bold text-[#825e43] mt-1">
-                  {(() => {
-                    if (order.isBlend && order.blendData) {
-                      try {
-                        const d = JSON.parse(order.blendData);
-                        return d.map((b: any) => `${b.name} ${b.grams}${b.unitType === 'piece' ? 'pcs' : 'g'}`).join(' + ');
-                      } catch { return 'Campuran'; }
-                    }
-                    const singleBean = beans?.find(b => b.slug === order.beanSlug);
-                    const unitLabel = singleBean?.unitType === 'piece' ? 'pcs' : 'g';
-                    return (singleBean?.name || order.beanName || (order.beanSlug ? order.beanSlug : 'Kopi')) + ` ${order.grams}${unitLabel}`;
-                  })()} • {new Date(order.createdAt).toLocaleDateString()}
+                  {getOrderLabel(order, beans)} • {new Date(order.createdAt).toLocaleDateString('id-ID')}
                 </p>
               </div>
               <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${
@@ -1090,7 +1248,7 @@ export default function App() {
   const isFailed = status === 'expire' || status === 'cancel' || status === 'deny';
 
   return (
-    <div className="min-h-screen bg-[#4a2e1b] flex flex-col items-center justify-center p-4 sm:p-6 font-sans text-[#3b2313] relative overflow-hidden">
+    <div className="min-h-screen bg-[#4a2e1b] flex flex-col items-center p-4 sm:p-6 font-sans text-[#3b2313] relative overflow-hidden">
       
       {/* Decorative Elements matching poster style */}
       <div className="absolute top-10 left-10 opacity-20 text-[#e68a2e] animate-float pointer-events-none">
@@ -1100,7 +1258,7 @@ export default function App() {
         <Coffee className="w-32 h-32" />
       </div>
 
-      <div className="max-w-md w-full relative z-10 space-y-4">
+      <div className="max-w-md w-full relative z-10 space-y-4 my-auto">
         
         {/* Header matching poster style */}
         <div className="text-center space-y-2 mb-2 mt-4">

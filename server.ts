@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
 import { beans, orders, configs, disbursements } from "./src/db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 dotenv.config();
 
@@ -41,6 +41,12 @@ async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean
 
 const adminTokens = new Map<string, { createdAt: number }>();
 const ADMIN_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function parseDateParam(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 function generateAdminToken(): string {
   return crypto.randomUUID();
@@ -722,7 +728,16 @@ async function startServer() {
   app.get("/api/history", async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const history = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(50);
+      const fromDate = parseDateParam(req.query.from);
+      const toDate = parseDateParam(req.query.to);
+      const where = and(
+        fromDate ? gte(orders.createdAt, fromDate) : undefined,
+        toDate ? lte(orders.createdAt, toDate) : undefined,
+      );
+      const history = await db.select().from(orders)
+        .where(where)
+        .orderBy(desc(orders.createdAt))
+        .limit(where ? 500 : 50);
       res.json(history);
     } catch (e) {
       console.error("DB History Error:", e);
@@ -733,34 +748,52 @@ async function startServer() {
   app.get("/api/balance", async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      // Calculate total income from completed orders
-      const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const fromDate = parseDateParam(req.query.from);
+      const toDate = parseDateParam(req.query.to);
+      const hasRange = !!(fromDate || toDate);
+      const orderRange = sql`${fromDate ? sql`AND created_at >= ${fromDate}` : sql``}${toDate ? sql` AND created_at <= ${toDate}` : sql``}`;
+      const orderRangeAliased = sql`${fromDate ? sql`AND o.created_at >= ${fromDate}` : sql``}${toDate ? sql` AND o.created_at <= ${toDate}` : sql``}`;
+      const disbRange = sql`${fromDate ? sql`AND processed_at >= ${fromDate}` : sql``}${toDate ? sql` AND processed_at <= ${toDate}` : sql``}`;
+
+      // Calculate total income from completed orders (scoped to range when given)
+      const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture') ${orderRange}`);
       const totalIncome = incomeResult[0]?.total ? parseInt(incomeResult[0].total as string, 10) : 0;
-      
+
       // Calculate total MDR fees from completed orders (compute from amount for accuracy with pre-migration orders)
-      const mdrResult = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+      const mdrResult = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture') ${orderRange}`);
       const totalMdrFees = mdrResult[0]?.total ? parseInt(mdrResult[0].total as string, 10) : 0;
-      
-      // Calculate total approved disbursements
-      const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
+
+      // Calculate total approved disbursements (scoped to range when given)
+      const disbursedResult = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved' ${disbRange}`);
       const totalDisbursed = disbursedResult[0]?.total ? parseInt(disbursedResult[0].total as string, 10) : 0;
-      
-      // Calculate total withdrawal fees from approved disbursements
-      const withdrawalFeeResult = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
+
+      // Calculate total withdrawal fees from approved disbursements (scoped to range when given)
+      const withdrawalFeeResult = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved' ${disbRange}`);
       const totalWithdrawalFees = withdrawalFeeResult[0]?.total ? parseInt(withdrawalFeeResult[0].total as string, 10) : 0;
-      
+
       // Calculate net income after MDR
       const netIncome = totalIncome - totalMdrFees;
-      
-      // Available balance = net income - approved disbursements - withdrawal fees
-      const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
-      
+
+      // Available balance is the live balance — always computed across all time, never scoped to the filter range
+      let availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
+      if (hasRange) {
+        const allIncome = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+        const allMdr = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture')`);
+        const allDisbursed = await db.execute(sql`SELECT SUM(amount) as total FROM disbursements WHERE status = 'approved'`);
+        const allWithdrawalFees = await db.execute(sql`SELECT SUM(withdrawal_fee) as total FROM disbursements WHERE status = 'approved'`);
+        availableBalance =
+          (allIncome[0]?.total ? parseInt(allIncome[0].total as string, 10) : 0) -
+          (allMdr[0]?.total ? parseInt(allMdr[0].total as string, 10) : 0) -
+          (allDisbursed[0]?.total ? parseInt(allDisbursed[0].total as string, 10) : 0) -
+          (allWithdrawalFees[0]?.total ? parseInt(allWithdrawalFees[0].total as string, 10) : 0);
+      }
+
       // Calculate per-bean income breakdown (only from completed orders)
       // For blend orders, income is split proportionally based on each bean's price contribution
       const settledOrders = await db.execute(sql`
         SELECT o.amount, o.bean_slug, o.bean_name, o.is_blend, o.blend_data
         FROM orders o
-        WHERE o.status IN ('settlement', 'capture')
+        WHERE o.status IN ('settlement', 'capture') ${orderRangeAliased}
       `);
 
       const beanIncomeMap = new Map<string, { name: string; income: number; count: number }>();
