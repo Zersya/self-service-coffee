@@ -751,9 +751,9 @@ async function startServer() {
       const fromDate = parseDateParam(req.query.from);
       const toDate = parseDateParam(req.query.to);
       const hasRange = !!(fromDate || toDate);
-      const orderRange = sql`${fromDate ? sql`AND created_at >= ${fromDate}` : sql``}${toDate ? sql` AND created_at <= ${toDate}` : sql``}`;
-      const orderRangeAliased = sql`${fromDate ? sql`AND o.created_at >= ${fromDate}` : sql``}${toDate ? sql` AND o.created_at <= ${toDate}` : sql``}`;
-      const disbRange = sql`${fromDate ? sql`AND processed_at >= ${fromDate}` : sql``}${toDate ? sql` AND processed_at <= ${toDate}` : sql``}`;
+      const orderRange = sql`${fromDate ? sql`AND created_at >= ${fromDate.toISOString()}` : sql``}${toDate ? sql` AND created_at <= ${toDate.toISOString()}` : sql``}`;
+      const orderRangeAliased = sql`${fromDate ? sql`AND o.created_at >= ${fromDate.toISOString()}` : sql``}${toDate ? sql` AND o.created_at <= ${toDate.toISOString()}` : sql``}`;
+      const disbRange = sql`${fromDate ? sql`AND processed_at >= ${fromDate.toISOString()}` : sql``}${toDate ? sql` AND processed_at <= ${toDate.toISOString()}` : sql``}`;
 
       // Calculate total income from completed orders (scoped to range when given)
       const incomeResult = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture') ${orderRange}`);
