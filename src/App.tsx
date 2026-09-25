@@ -287,8 +287,11 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                 <div className="flex items-center justify-center gap-2 mb-3 pb-2 border-b border-[#e6d5b8]">
                   <Coffee className="w-3.5 h-3.5 text-[#e68a2e]" />
                   <span className="font-extrabold text-[#3b2313] uppercase tracking-wider text-[11px]">Pemasukan per Produk</span>
+                  <span className="bg-[#e68a2e]/10 text-[#e68a2e] text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                    {balanceDetails.perBeanIncome.length}
+                  </span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
                   {balanceDetails.perBeanIncome.map((bean, index) => (
                     <div key={bean.beanSlug} className="group">
                       <div className="flex justify-between items-start gap-3">
