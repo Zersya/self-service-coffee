@@ -434,7 +434,11 @@ async function startServer() {
           const netAmount = expectedAmount - mdrFee;
 
           const isBlend = resolvedBeans.length > 1;
-          const blendData = isBlend ? JSON.stringify(resolvedBeans) : null;
+          // Always persist the resolved items snapshot (even for single-product
+          // orders) so history keeps the exact historical unitType and per-unit
+          // price. All readers gate multi-item logic on isBlend, and
+          // handlePayOrder restores identical state from a 1-item snapshot.
+          const blendData = JSON.stringify(resolvedBeans);
 
           await db.insert(orders).values({
             orderId,
@@ -775,7 +779,9 @@ async function startServer() {
       const netIncome = totalIncome - totalMdrFees;
 
       // Available balance is the live balance — always computed across all time, never scoped to the filter range
-      let availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
+      // NOTE: disbursements.amount is the gross outflow (requester receives amount - fee, see
+      // DisbursementManager copy), so the withdrawal fee is already inside it — subtract amount only.
+      let availableBalance = netIncome - totalDisbursed;
       if (hasRange) {
         const allIncome = await db.execute(sql`SELECT SUM(amount) as total FROM orders WHERE status IN ('settlement', 'capture')`);
         const allMdr = await db.execute(sql`SELECT SUM(ROUND(amount * 0.007)) as total FROM orders WHERE status IN ('settlement', 'capture')`);
@@ -784,19 +790,73 @@ async function startServer() {
         availableBalance =
           (allIncome[0]?.total ? parseInt(allIncome[0].total as string, 10) : 0) -
           (allMdr[0]?.total ? parseInt(allMdr[0].total as string, 10) : 0) -
-          (allDisbursed[0]?.total ? parseInt(allDisbursed[0].total as string, 10) : 0) -
-          (allWithdrawalFees[0]?.total ? parseInt(allWithdrawalFees[0].total as string, 10) : 0);
+          (allDisbursed[0]?.total ? parseInt(allDisbursed[0].total as string, 10) : 0);
       }
 
       // Calculate per-bean income breakdown (only from completed orders)
-      // For blend orders, income is split proportionally based on each bean's price contribution
+      // For blend orders, income is split proportionally based on each bean's price contribution.
+      // Each entry also carries totalQuantity + unitType so the dashboard can show a
+      // transparent per-unit price (qty x unit price = total). orderCount counts order
+      // rows, NOT units — one order can contain multiple units.
       const settledOrders = await db.execute(sql`
-        SELECT o.amount, o.bean_slug, o.bean_name, o.is_blend, o.blend_data
+        SELECT o.amount, o.grams, o.bean_slug, o.bean_name, o.is_blend, o.blend_data
         FROM orders o
         WHERE o.status IN ('settlement', 'capture') ${orderRangeAliased}
       `);
 
-      const beanIncomeMap = new Map<string, { name: string; income: number; count: number }>();
+      // Current catalog for unitType lookup of single-product orders that predate
+      // per-item snapshots (blend_data). Best-effort: falls back to 'gram'.
+      const catalogUnitTypes = new Map<string, string>();
+      try {
+        const catalog = await db.select().from(beans);
+        for (const b of catalog) catalogUnitTypes.set(b.slug, b.unitType || 'gram');
+      } catch { /* unitType falls back below */ }
+
+      type BeanAggregate = {
+        name: string;
+        income: number;
+        count: number;
+        qty: number;
+        unitType: string;
+        minUnitPrice: number | null;
+        maxUnitPrice: number | null;
+      };
+      const beanIncomeMap = new Map<string, BeanAggregate>();
+
+      const recordIncome = (
+        key: string,
+        name: string,
+        amount: number,
+        qty: number,
+        unitType: string,
+      ) => {
+        const safeQty = isNaN(qty) || qty < 0 ? 0 : qty;
+        // Effective historical per-unit price for this order slice:
+        // piece -> per pcs, gram -> per 250g (matches catalog labels).
+        const unitPrice = safeQty > 0
+          ? (unitType === 'piece' ? amount / safeQty : (amount * 250) / safeQty)
+          : null;
+        const existing = beanIncomeMap.get(key);
+        if (existing) {
+          existing.income += amount;
+          existing.count += 1;
+          existing.qty += safeQty;
+          if (unitPrice !== null) {
+            existing.minUnitPrice = existing.minUnitPrice === null ? unitPrice : Math.min(existing.minUnitPrice, unitPrice);
+            existing.maxUnitPrice = existing.maxUnitPrice === null ? unitPrice : Math.max(existing.maxUnitPrice, unitPrice);
+          }
+        } else {
+          beanIncomeMap.set(key, {
+            name,
+            income: amount,
+            count: 1,
+            qty: safeQty,
+            unitType,
+            minUnitPrice: unitPrice,
+            maxUnitPrice: unitPrice,
+          });
+        }
+      };
 
       for (const row of (settledOrders || []) as any[]) {
         if (row.is_blend && row.blend_data) {
@@ -835,38 +895,57 @@ async function startServer() {
               remainingAmount -= splitIncome;
             }
 
-            const key = b.slug || 'unknown';
-            const existing = beanIncomeMap.get(key);
-            if (existing) {
-              existing.income += splitIncome;
-              existing.count += 1;
-            } else {
-              beanIncomeMap.set(key, { name: b.name, income: splitIncome, count: 1 });
-            }
+            recordIncome(
+              b.slug || 'unknown',
+              b.name,
+              splitIncome,
+              parseFloat(b.grams),
+              b.unitType || 'gram',
+            );
           }
         } else {
-          const key = row.bean_slug || 'unknown';
-          const existing = beanIncomeMap.get(key);
-          if (existing) {
-            existing.income += parseInt(row.amount, 10);
-            existing.count += 1;
-          } else {
-            beanIncomeMap.set(key, {
-              name: row.bean_name || 'Unknown',
-              income: parseInt(row.amount, 10),
-              count: 1,
-            });
-          }
+          // Single-product order: unit price is derived from the stored historical
+          // amount/qty (never the current catalog price, which may have changed).
+          // Newer orders also carry a 1-item blend_data snapshot with exact unitType.
+          let unitType: string | undefined;
+          try {
+            const snapshot = row.blend_data ? JSON.parse(row.blend_data) : null;
+            if (Array.isArray(snapshot) && snapshot.length > 0 && snapshot[0].unitType) {
+              unitType = snapshot[0].unitType;
+            }
+          } catch { /* fall through to catalog lookup */ }
+          unitType = unitType || catalogUnitTypes.get(row.bean_slug) || 'gram';
+          recordIncome(
+            row.bean_slug || 'unknown',
+            row.bean_name || 'Unknown',
+            parseInt(row.amount, 10),
+            parseFloat(row.grams),
+            unitType,
+          );
         }
       }
 
       const perBeanIncome = Array.from(beanIncomeMap.entries())
-        .map(([slug, data]) => ({
-          beanName: data.name,
-          beanSlug: slug,
-          totalIncome: data.income,
-          orderCount: data.count,
-        }))
+        .map(([slug, data]) => {
+          const meanUnitPrice = data.qty > 0
+            ? (data.unitType === 'piece' ? data.income / data.qty : (data.income * 250) / data.qty)
+            : 0;
+          const spread = data.minUnitPrice !== null && data.maxUnitPrice !== null
+            ? data.maxUnitPrice - data.minUnitPrice
+            : 0;
+          return {
+            beanName: data.name,
+            beanSlug: slug,
+            totalIncome: data.income,
+            orderCount: data.count,
+            totalQuantity: Math.round(data.qty * 100) / 100,
+            unitType: data.unitType,
+            unitPrice: Math.round(meanUnitPrice),
+            // True when the product sold at more than one historical unit price,
+            // so unitPrice is a quantity-weighted average, not an exact price.
+            isAveragePrice: spread > Math.max(1, meanUnitPrice * 0.002),
+          };
+        })
         .sort((a, b) => b.totalIncome - a.totalIncome);
       
       res.json({ 
@@ -978,8 +1057,9 @@ async function startServer() {
       const netIncome = totalIncome - totalMdrFees;
       const availableBalance = netIncome - totalDisbursed - totalWithdrawalFees;
       
-      // Check if there's enough balance (need to cover both amount + withdrawal fee)
-      const totalNeeded = request.amount + request.withdrawalFee;
+      // Check if there's enough balance. disbursements.amount is the gross outflow
+      // (requester receives amount - fee), so only amount needs to be covered.
+      const totalNeeded = request.amount;
       
       if (totalNeeded > availableBalance) {
         return res.status(400).json({ 

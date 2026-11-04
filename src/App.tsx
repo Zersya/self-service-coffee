@@ -64,6 +64,10 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
       beanSlug: string;
       totalIncome: number;
       orderCount: number;
+      totalQuantity: number;
+      unitType: string;
+      unitPrice: number;
+      isAveragePrice: boolean;
     }>;
   } | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -259,6 +263,7 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
           <h3 className="uppercase tracking-widest text-sm">Saldo Tersedia</h3>
         </div>
         <p className="text-4xl font-extrabold text-[#3b2313] tracking-tight">Rp {balance.toLocaleString('id-ID')}</p>
+        <p className="text-[10px] font-bold text-[#825e43]/70 uppercase tracking-widest mt-1">Semua waktu · tidak ikut filter periode</p>
         
         {balanceDetails && (
           <div className="mt-4 w-full space-y-2">
@@ -292,7 +297,14 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                   </span>
                 </div>
                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
-                  {balanceDetails.perBeanIncome.map((bean, index) => (
+                  {balanceDetails.perBeanIncome.map((bean, index) => {
+                    const isPiece = bean.unitType === 'piece';
+                    const qty = bean.totalQuantity || 0;
+                    const qtyLabel = isPiece
+                      ? `${Math.round(qty).toLocaleString('id-ID')} pcs`
+                      : `${qty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} g`;
+                    const priceLabel = isPiece ? '/pcs' : '/250g';
+                    return (
                     <div key={bean.beanSlug} className="group">
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex-1 min-w-0">
@@ -302,10 +314,15 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                             </span>
                             <span className="font-extrabold text-[#3b2313] text-xs leading-tight">{bean.beanName}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 mt-1 ml-7">
+                          <div className="flex items-center gap-1.5 mt-1 ml-7 flex-wrap">
                             <span className="bg-[#e68a2e]/10 text-[#e68a2e] px-2 py-0.5 rounded-full text-[10px] font-bold">
                               {bean.orderCount} pesanan
                             </span>
+                            {qty > 0 && (
+                              <span className="bg-[#f7ede1] text-[#825e43] px-2 py-0.5 rounded-full text-[10px] font-bold" title="Jumlah terjual × harga satuan efektif (dari riwayat transaksi, bukan harga katalog saat ini)">
+                                {qtyLabel} × Rp {(bean.unitPrice || 0).toLocaleString('id-ID')}{priceLabel}{bean.isAveragePrice ? ' (rata-rata)' : ''}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="text-right shrink-0 pt-0.5">
@@ -318,7 +335,8 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
                         <div className="h-px bg-[#e6d5b8]/40 mt-2 ml-7"></div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -327,12 +345,12 @@ function Dashboard({ onPayOrder, turnstileSiteKey, beans }: { onPayOrder?: (gram
             {(balanceDetails.totalDisbursed > 0 || balanceDetails.totalWithdrawalFees > 0) && (
               <div className="bg-white/50 rounded-xl p-3 text-xs">
                 <div className="flex justify-between font-bold text-[#825e43] mb-1">
-                  <span>Sudah Dicairkan:</span>
+                  <span>Dana Keluar (Pencairan):</span>
                   <span>Rp {balanceDetails.totalDisbursed.toLocaleString('id-ID')}</span>
                 </div>
-                <div className="flex justify-between font-bold text-[#d93025] text-[10px]">
-                  <span>Biaya Withdrawal (Rp 5.000×):</span>
-                  <span>- Rp {balanceDetails.totalWithdrawalFees.toLocaleString('id-ID')}</span>
+                <div className="flex justify-between font-bold text-[#825e43] text-[10px]">
+                  <span>Termasuk Biaya Withdrawal (Rp 5.000×):</span>
+                  <span>Rp {balanceDetails.totalWithdrawalFees.toLocaleString('id-ID')}</span>
                 </div>
               </div>
             )}
