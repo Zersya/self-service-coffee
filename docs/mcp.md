@@ -29,8 +29,9 @@ MCP_OAUTH_CLIENT_SECRET=<long random>
 MCP_OAUTH_SIGNING_SECRET=<long random>
 MCP_OAUTH_TOKEN_EXPIRY=3600
 # Optional:
-MCP_OAUTH_REDIRECT_URIS=<redirect URI copied from your MCP client>
 MCP_OAUTH_DCR_ENABLED=true
+# MCP_OAUTH_REDIRECT_URIS=  (leave empty — the redirect URI comes from your client;
+#                             loopback redirects are always allowed)
 ```
 
 Run the DB migration once (`npm run db:push`) — it adds `mcp_oauth_clients` and

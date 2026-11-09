@@ -128,8 +128,13 @@ export async function isRedirectUriAllowed(clientId: string, redirectUri: string
   } catch {
     return false;
   }
-  const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  const isLocalhost =
+    parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
   if (parsed.protocol !== 'https:' && !(isLocalhost && parsed.protocol === 'http:')) return false;
+
+  // Native/desktop clients use loopback redirects on a random port (RFC 8252),
+  // so they cannot be pre-configured. The admin login + consent still gates this.
+  if (isLocalhost) return true;
 
   if (getConfiguredRedirectUris().includes(redirectUri)) return true;
 

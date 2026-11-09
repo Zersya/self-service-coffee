@@ -25,6 +25,9 @@ test('redirect allowlist: configured URIs pass, others fail, http non-localhost 
   const { isRedirectUriAllowed } = await import('../../src/mcp/oauth/clients');
   assert.equal(await isRedirectUriAllowed('test-client', 'https://client.example.com/callback'), true);
   assert.equal(await isRedirectUriAllowed('test-client', 'http://localhost:9999/callback'), true);
+  // Loopback redirects on random ports (Cursor/Claude desktop) need no pre-configuration.
+  assert.equal(await isRedirectUriAllowed('any-client', 'http://127.0.0.1:54321/oauth/callback'), true);
+  assert.equal(await isRedirectUriAllowed('any-client', 'http://localhost:1234/callback'), true);
   assert.equal(await isRedirectUriAllowed('test-client', 'https://evil.example.com/callback'), false);
   assert.equal(await isRedirectUriAllowed('test-client', 'http://evil.example.com/callback'), false);
   assert.equal(await isRedirectUriAllowed('unknown-client', 'https://client.example.com/callback'), true);

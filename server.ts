@@ -15,6 +15,18 @@ import {
 } from "./src/services/products";
 import { getBalance, listOrderHistory } from "./src/services/reports";
 import { mountMcp } from "./src/mcp/mount";
+import {
+  getAdminEmail,
+  getConfiguredRedirectUris,
+  getMcpOAuthClientId,
+  getMcpOAuthIssuer,
+  getMcpOAuthTokenExpirySeconds,
+  getMcpResourceUrl,
+  getStaticToken,
+  isDcrEnabled,
+  isMcpOAuthEnabled,
+  MCP_SCOPES,
+} from "./src/mcp/oauth/config";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 dotenv.config();
@@ -189,6 +201,42 @@ async function startServer() {
   // Admin verify token
   app.get("/api/admin/verify", adminAuthMiddleware, (req, res) => {
     res.json({ valid: true });
+  });
+
+  // Admin: MCP setup info for the Admin panel (status + URLs, never secret values)
+  app.get("/api/admin/mcp-info", adminAuthMiddleware, (req, res) => {
+    const oauthEnabled = isMcpOAuthEnabled();
+    res.json({
+      oauthEnabled,
+      mcpEnabled: oauthEnabled || Boolean(getStaticToken()),
+      issuer: getMcpOAuthIssuer(),
+      mcpUrl: getMcpResourceUrl(),
+      authorizationUrl: `${getMcpOAuthIssuer()}/oauth/authorize`,
+      tokenUrl: `${getMcpOAuthIssuer()}/oauth/token`,
+      discoveryUrl: `${getMcpOAuthIssuer()}/.well-known/oauth-protected-resource/mcp`,
+      clientId: getMcpOAuthClientId() || null,
+      dcrEnabled: isDcrEnabled(),
+      tokenExpirySeconds: getMcpOAuthTokenExpirySeconds(),
+      scopes: [...MCP_SCOPES],
+      tools: [
+        'kopi_get_admin_info', 'kopi_list_products', 'kopi_get_product', 'kopi_list_low_stock',
+        'kopi_get_balance', 'kopi_list_orders', 'kopi_create_product', 'kopi_update_product',
+        'kopi_set_product_active', 'kopi_adjust_stock', 'kopi_preview_receipt_items',
+        'kopi_apply_receipt_items',
+      ],
+      envChecklist: [
+        { name: 'ADMIN_EMAIL', configured: Boolean(getAdminEmail()), required: true },
+        { name: 'ADMIN_PASSWORD', configured: Boolean(process.env.ADMIN_PASSWORD), required: true },
+        { name: 'DATABASE_URL', configured: Boolean(db), required: true },
+        { name: 'MCP_OAUTH_ISSUER', configured: Boolean(process.env.MCP_OAUTH_ISSUER?.trim()), required: true, hint: 'Public HTTPS origin, no trailing slash' },
+        { name: 'MCP_OAUTH_CLIENT_ID', configured: Boolean(getMcpOAuthClientId()), required: true },
+        { name: 'MCP_OAUTH_CLIENT_SECRET', configured: Boolean(process.env.MCP_OAUTH_CLIENT_SECRET?.trim()), required: true },
+        { name: 'MCP_OAUTH_SIGNING_SECRET', configured: Boolean(process.env.MCP_OAUTH_SIGNING_SECRET?.trim()), required: true },
+        { name: 'MCP_OAUTH_REDIRECT_URIS', configured: getConfiguredRedirectUris().length > 0, required: false, hint: 'Redirect URI copied from your MCP client' },
+        { name: 'MCP_OAUTH_DCR_ENABLED', configured: isDcrEnabled(), required: false, hint: 'Set to true for clients that self-register' },
+        { name: 'MCP_STATIC_TOKEN', configured: Boolean(getStaticToken()), required: false, hint: 'Local read-only testing only' },
+      ],
+    });
   });
 
   // Admin: List all beans

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, Power, LayoutDashboard, ArrowLeft, ArrowLeftRight, CheckCircle2, XCircle } from 'lucide-react';
+import { Coffee, Plus, LogOut, Loader2, X, Check, Edit3, Trash2, Power, LayoutDashboard, ArrowLeft, ArrowLeftRight, CheckCircle2, XCircle, Bot, Copy, KeyRound, ReceiptText } from 'lucide-react';
 
 export default function Admin() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('admin_token'));
@@ -28,6 +28,10 @@ export default function Admin() {
   const [disbursementsLoading, setDisbursementsLoading] = useState(false);
   const [disbursementAction, setDisbursementAction] = useState<string | null>(null);
 
+  const [mcpInfo, setMcpInfo] = useState<any | null>(null);
+  const [mcpInfoLoading, setMcpInfoLoading] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   useEffect(() => {
     if (token) fetchBeans();
   }, [token]);
@@ -35,6 +39,31 @@ export default function Admin() {
   useEffect(() => {
     if (token) fetchDisbursements();
   }, [token]);
+
+  useEffect(() => {
+    if (token) fetchMcpInfo();
+  }, [token]);
+
+  const fetchMcpInfo = async () => {
+    setMcpInfoLoading(true);
+    try {
+      const res = await fetch('/api/admin/mcp-info', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) setMcpInfo(data);
+    } catch {} finally {
+      setMcpInfoLoading(false);
+    }
+  };
+
+  const copyText = async (field: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    } catch {}
+  };
 
   const fetchBeans = async () => {
     setLoading(true);
@@ -430,6 +459,101 @@ export default function Admin() {
                 ))}
               </div>
             )}
+
+            {/* MCP / AI Agent Section */}
+            <div className="mt-8 pt-8 border-t-2 border-[#e6d5b8]">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-extrabold text-[#825e43] uppercase tracking-wider text-sm flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-[#e68a2e]" />
+                  MCP / AI Agent
+                </h2>
+                {mcpInfo && (
+                  <span className={`text-[10px] px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wider ${mcpInfo.oauthEnabled ? 'bg-[#e6f4ea] text-[#1e8e3e]' : 'bg-[#fef7e0] text-[#e68a2e]'}`}>
+                    {mcpInfo.oauthEnabled ? 'OAuth Aktif' : 'Belum Aktif'}
+                  </span>
+                )}
+              </div>
+
+              {mcpInfoLoading ? (
+                <div className="py-8 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#e68a2e]" />
+                </div>
+              ) : !mcpInfo ? (
+                <p className="text-[#825e43] text-sm text-center py-6 font-bold bg-[#e6d5b8]/20 rounded-2xl border-2 border-dashed border-[#e6d5b8]">
+                  Info MCP tidak tersedia
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4 space-y-3">
+                    {[
+                      { field: 'mcpUrl', label: 'MCP URL (tempel di Gemini / Cursor / Claude)', value: mcpInfo.mcpUrl },
+                      { field: 'clientId', label: 'Client ID (rahasia Client Secret tetap di .env server)', value: mcpInfo.clientId || '—' },
+                      { field: 'discoveryUrl', label: 'Discovery URL', value: mcpInfo.discoveryUrl },
+                    ].map(row => (
+                      <div key={row.field}>
+                        <p className="text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-1">{row.label}</p>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 min-w-0 bg-[#f7ede1] rounded-lg px-3 py-2 text-xs font-bold text-[#3b2313] truncate">{row.value}</code>
+                          <button
+                            onClick={() => copyText(row.field, row.value)}
+                            className="bg-[#f7ede1] hover:bg-[#e6d5b8] text-[#825e43] p-2 rounded-xl transition-all shrink-0"
+                            title="Salin"
+                          >
+                            {copiedField === row.field ? <Check className="w-4 h-4 text-[#1e8e3e]" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs font-bold text-[#825e43]">
+                      Token berlaku {Math.round((mcpInfo.tokenExpirySeconds || 3600) / 60)} menit. Scope: {(mcpInfo.scopes || []).join(', ')}. DCR: {mcpInfo.dcrEnabled ? 'aktif' : 'nonaktif'}.
+                    </p>
+                  </div>
+
+                  {!mcpInfo.oauthEnabled && (
+                    <div className="bg-[#fef7e0] border-2 border-[#e68a2e]/40 rounded-xl p-4">
+                      <p className="font-extrabold text-[#3b2313] text-sm flex items-center gap-2 mb-2">
+                        <KeyRound className="w-4 h-4 text-[#e68a2e]" /> Aktifkan lewat .env server (Coolify), lalu redeploy
+                      </p>
+                      <pre className="bg-white rounded-lg p-3 text-[11px] font-bold text-[#3b2313] overflow-x-auto whitespace-pre">{`MCP_OAUTH_ISSUER=https://domain-anda.example
+MCP_OAUTH_CLIENT_ID=<random panjang>
+MCP_OAUTH_CLIENT_SECRET=<random panjang>
+MCP_OAUTH_SIGNING_SECRET=<random panjang>
+MCP_OAUTH_DCR_ENABLED=true
+# MCP_OAUTH_REDIRECT_URIS=  (opsional, boleh kosong — URI dari client)`}</pre>
+                      <p className="text-xs font-bold text-[#825e43] mt-2">Buat nilai random: <code>openssl rand -hex 32</code>. Jangan bagikan Client Secret / Signing Secret. Setelah redeploy, status di atas berubah jadi OAuth Aktif.</p>
+                    </div>
+                  )}
+
+                  <div className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4">
+                    <p className="text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-2">Checklist .env (nilai rahasia tidak ditampilkan)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {(mcpInfo.envChecklist || []).map((item: any) => (
+                        <div key={item.name} className="flex items-center gap-2 text-xs font-bold">
+                          {item.configured ? (
+                            <CheckCircle2 className="w-4 h-4 text-[#1e8e3e] shrink-0" />
+                          ) : (
+                            <XCircle className={`w-4 h-4 shrink-0 ${item.required ? 'text-[#d93025]' : 'text-[#e6d5b8]'}`} />
+                          )}
+                          <code className="text-[#3b2313]">{item.name}</code>
+                          <span className="text-[#825e43]">{item.configured ? 'terisi' : item.required ? 'WAJIB' : 'opsional'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4">
+                    <p className="text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-2">Cara pakai</p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-xs font-bold text-[#3b2313]">
+                      <li>Gemini Spark: Connected Apps → Custom app → MCP URL di atas + Client ID/Secret dari .env → salin redirect URI Gemini ke <code>MCP_OAUTH_REDIRECT_URIS</code> → redeploy → Connect.</li>
+                      <li>Cursor / Claude: tambah remote MCP server dengan MCP URL di atas, lalu jalankan OAuth. Login memakai email/password Admin ini, lalu klik Izinkan.</li>
+                      <li>Di chat agen: "tampilkan produk dan stok", "tambah produk …", "tambah stok …", atau kirim foto struk belanja.</li>
+                      <li className="flex gap-1.5"><ReceiptText className="w-4 h-4 text-[#e68a2e] shrink-0" /><span>Foto struk: agen membaca foto → preview produk/stok → kamu setujui → baru diterapkan. Harga jual produk baru selalu kamu tentukan, bukan dari harga beli di struk.</span></li>
+                    </ol>
+                    <p className="text-[10px] font-bold text-[#825e43] mt-3 uppercase tracking-wide">Tools: {(mcpInfo.tools || []).join(', ')}</p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Disbursement Section */}
             <div className="mt-8 pt-8 border-t-2 border-[#e6d5b8]">
