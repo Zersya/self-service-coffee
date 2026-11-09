@@ -2,12 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { mcpOauthClients } from '../../db/schema';
-import {
-  getConfiguredRedirectUris,
-  getMcpOAuthClientId,
-  getMcpOAuthClientSecret,
-  isDcrEnabled,
-} from './config';
+import { getMcpOAuthClientId, getMcpOAuthClientSecret, isDcrEnabled } from './config';
 
 export function timingSafeStringEqual(a?: string, b?: string): boolean {
   if (!a || !b) return false;
@@ -111,17 +106,36 @@ export async function validateDynamicClientCredentials(
   return timingSafeStringEqual(hashClientSecret(clientSecret), client.clientSecretHash);
 }
 
-/** True when the client is known: static, CIMD URL, or DCR-registered. */
+/**
+ * Client authentication at the token endpoint. Every client is supported
+ * automatically: unknown clients are public clients and rely on mandatory
+ * PKCE plus the one-time code bound to their client_id/redirect_uri.
+ * Known clients keep their guarantees: the static client and DCR clients
+ * with a secret must still present that secret.
+ */
 export async function validateClientCredentials(
   clientId: string,
   clientSecret: string | undefined,
 ): Promise<boolean> {
-  if (validateStaticClientCredentials(clientId, clientSecret)) return true;
-  if (isUrlClientId(clientId)) return true; // public CIMD client; PKCE is mandatory
-  return validateDynamicClientCredentials(clientId, clientSecret);
+  const staticClientId = getMcpOAuthClientId();
+  if (staticClientId && clientId === staticClientId) {
+    return validateStaticClientCredentials(clientId, clientSecret);
+  }
+  if (await findDynamicClient(clientId)) {
+    return validateDynamicClientCredentials(clientId, clientSecret);
+  }
+  return true; // public client (incl. CIMD URL client IDs); PKCE is mandatory
 }
 
-export async function isRedirectUriAllowed(clientId: string, redirectUri: string): Promise<boolean> {
+/**
+ * Every client redirect URI is supported automatically — there is no
+ * allowlist to configure. The authorization code is only issued after the
+ * admin logs in and approves the consent screen (which shows the exact
+ * redirect URI), and the code is single-use, 10-minute, PKCE-bound.
+ * The only rejection left: plain http outside loopback, which would send
+ * the code in cleartext.
+ */
+export async function isRedirectUriAllowed(_clientId: string, redirectUri: string): Promise<boolean> {
   let parsed: URL;
   try {
     parsed = new URL(redirectUri);
@@ -130,42 +144,6 @@ export async function isRedirectUriAllowed(clientId: string, redirectUri: string
   }
   const isLocalhost =
     parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
-  if (parsed.protocol !== 'https:' && !(isLocalhost && parsed.protocol === 'http:')) return false;
-
-  // Native/desktop clients use loopback redirects on a random port (RFC 8252),
-  // so they cannot be pre-configured. The admin login + consent still gates this.
-  if (isLocalhost) return true;
-
-  if (getConfiguredRedirectUris().includes(redirectUri)) return true;
-
-  const staticClientId = getMcpOAuthClientId();
-  if (staticClientId && clientId === staticClientId && isGoogleHostedRedirectUri(redirectUri)) {
-    console.warn(`MCP OAuth: allowing Google-hosted redirect for static client: ${redirectUri}`);
-    return true;
-  }
-
-  if (isUrlClientId(clientId)) {
-    const cimdRedirects = await fetchCimdRedirectUris(clientId);
-    if (cimdRedirects?.includes(redirectUri)) return true;
-    // Gemini Spark may use cross-origin Google redirect URIs with CIMD client IDs.
-    if (isGoogleHostedRedirectUri(redirectUri)) {
-      console.warn(`MCP OAuth: allowing Google-hosted redirect for CIMD client: ${redirectUri}`);
-      return true;
-    }
-    return false;
-  }
-
-  const dynamic = await findDynamicClient(clientId);
-  if (dynamic) {
-    try {
-      const uris = JSON.parse(dynamic.redirectUris) as string[];
-      return Array.isArray(uris) && uris.includes(redirectUri);
-    } catch {
-      return false;
-    }
-  }
-
-  // Static client: only explicitly configured redirects (or Google exception above).
-  if (staticClientId && clientId === staticClientId) return false;
-  return false;
+  if (parsed.protocol === 'https:') return true;
+  return isLocalhost && parsed.protocol === 'http:';
 }

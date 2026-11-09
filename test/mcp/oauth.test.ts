@@ -10,6 +10,8 @@ before(() => {
   process.env.MCP_OAUTH_REDIRECT_URIS = 'https://client.example.com/callback,http://localhost:9999/callback';
   process.env.ADMIN_EMAIL = 'admin@kopi-kita.com';
   process.env.ADMIN_PASSWORD = 'test-admin-password';
+  // Keep unit tests off the real database (DCR client lookup is DB-backed).
+  process.env.MCP_OAUTH_DCR_ENABLED = 'false';
 });
 
 test('PKCE S256 accepts valid verifier and rejects wrong one', async () => {
@@ -21,16 +23,14 @@ test('PKCE S256 accepts valid verifier and rejects wrong one', async () => {
   assert.equal(verifyPkceS256(undefined, challenge), false);
 });
 
-test('redirect allowlist: configured URIs pass, others fail, http non-localhost fails', async () => {
+test('redirect URIs: https and loopback pass, cleartext http elsewhere fails', async () => {
   const { isRedirectUriAllowed } = await import('../../src/mcp/oauth/clients');
   assert.equal(await isRedirectUriAllowed('test-client', 'https://client.example.com/callback'), true);
   assert.equal(await isRedirectUriAllowed('test-client', 'http://localhost:9999/callback'), true);
   // Loopback redirects on random ports (Cursor/Claude desktop) need no pre-configuration.
   assert.equal(await isRedirectUriAllowed('any-client', 'http://127.0.0.1:54321/oauth/callback'), true);
   assert.equal(await isRedirectUriAllowed('any-client', 'http://localhost:1234/callback'), true);
-  assert.equal(await isRedirectUriAllowed('test-client', 'https://evil.example.com/callback'), false);
   assert.equal(await isRedirectUriAllowed('test-client', 'http://evil.example.com/callback'), false);
-  assert.equal(await isRedirectUriAllowed('unknown-client', 'https://client.example.com/callback'), true);
 });
 
 test('access token verifies with aud/iss and rejects tampering', async () => {
@@ -45,6 +45,33 @@ test('access token verifies with aud/iss and rejects tampering', async () => {
   assert.equal(payload?.aud, 'https://kopi.example.com/mcp');
   assert.equal(verifyMcpAccessToken(`${accessToken}x`), null);
   assert.equal(verifyMcpAccessToken('not-a-jwt'), null);
+});
+
+test('every client redirect URI is supported automatically (https + loopback http)', async () => {
+  const { isRedirectUriAllowed } = await import('../../src/mcp/oauth/clients');
+  // Fixed web callbacks from arbitrary clients, no pre-configuration:
+  assert.equal(await isRedirectUriAllowed('claude-client', 'https://claude.ai/api/mcp/auth_callback'), true);
+  assert.equal(await isRedirectUriAllowed('chatgpt-client', 'https://chatgpt.com/connector_platform_oauth_redirect'), true);
+  assert.equal(await isRedirectUriAllowed('brand-new-client', 'https://new-tool.example.com/oauth/done'), true);
+  // Plain http outside loopback is still rejected (would leak the code in cleartext):
+  assert.equal(await isRedirectUriAllowed('brand-new-client', 'http://new-tool.example.com/oauth/done'), false);
+  assert.equal(await isRedirectUriAllowed('brand-new-client', 'not a url'), false);
+});
+
+test('unknown public clients can exchange a code; the static client still needs its secret', async () => {
+  const { validateClientCredentials } = await import('../../src/mcp/oauth/clients');
+  assert.equal(await validateClientCredentials('brand-new-public-client', undefined), true);
+  assert.equal(await validateClientCredentials('test-client', undefined), false);
+  assert.equal(await validateClientCredentials('test-client', 'wrong-secret'), false);
+  assert.equal(await validateClientCredentials('test-client', 'test-secret'), true);
+});
+
+test('DCR is on by default and only disabled by explicit false', async () => {
+  const { isDcrEnabled } = await import('../../src/mcp/oauth/config');
+  delete process.env.MCP_OAUTH_DCR_ENABLED;
+  assert.equal(isDcrEnabled(), true);
+  process.env.MCP_OAUTH_DCR_ENABLED = 'false';
+  assert.equal(isDcrEnabled(), false);
 });
 
 test('admin credentials use the configured email/password', async () => {

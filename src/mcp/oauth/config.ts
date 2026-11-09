@@ -45,8 +45,9 @@ export function isMcpOAuthEnabled(): boolean {
   return Boolean(getMcpOAuthClientId() && getMcpOAuthClientSecret() && getMcpOAuthSigningSecret());
 }
 
+/** DCR is on by default so every client works automatically; set MCP_OAUTH_DCR_ENABLED=false to disable. */
 export function isDcrEnabled(): boolean {
-  return isMcpOAuthEnabled() && process.env.MCP_OAUTH_DCR_ENABLED?.trim() === 'true';
+  return isMcpOAuthEnabled() && process.env.MCP_OAUTH_DCR_ENABLED?.trim() !== 'false';
 }
 
 export function getStaticToken(): string | undefined {

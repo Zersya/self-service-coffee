@@ -28,10 +28,8 @@ MCP_OAUTH_CLIENT_ID=<long random>
 MCP_OAUTH_CLIENT_SECRET=<long random>
 MCP_OAUTH_SIGNING_SECRET=<long random>
 MCP_OAUTH_TOKEN_EXPIRY=3600
-# Optional:
-MCP_OAUTH_DCR_ENABLED=true
-# MCP_OAUTH_REDIRECT_URIS=  (leave empty — the redirect URI comes from your client;
-#                             loopback redirects are always allowed)
+# DCR is on by default and every client redirect URI is accepted automatically.
+# MCP_OAUTH_DCR_ENABLED=false  # only to disable DCR
 ```
 
 Run the DB migration once (`npm run db:push`) — it adds `mcp_oauth_clients` and
@@ -55,17 +53,15 @@ Settings → Connected Apps → Custom apps for Spark:
 
 - MCP URL: `https://<your-domain>/mcp`
 - Client ID / Client Secret: the `MCP_OAUTH_CLIENT_ID/SECRET` values
-- Copy Gemini's redirect URI and add it to `MCP_OAUTH_REDIRECT_URIS`, redeploy,
-  then connect and approve the admin consent page in the browser.
+- Connect and approve the admin consent page in the browser. Every redirect URI
+  is accepted automatically — nothing to configure.
 
 ### Cursor / Claude (OAuth)
 
 Add a remote MCP server with URL `https://<your-domain>/mcp` and start the OAuth
-flow from the client. Clients that support Client ID Metadata Documents (CIMD)
-or Dynamic Client Registration work without manual client credentials (DCR needs
-`MCP_OAUTH_DCR_ENABLED=true`). If your client asks for a client ID/secret, use
-the static `MCP_OAUTH_*` values and add its redirect URI to
-`MCP_OAUTH_REDIRECT_URIS`.
+flow from the client. Dynamic Client Registration is on by default, CIMD and
+public PKCE clients work too, and every redirect URI is accepted automatically.
+If your client asks for a client ID/secret, use the static `MCP_OAUTH_*` values.
 
 ### MCP Inspector (local check)
 
@@ -114,8 +110,9 @@ The agent (not this server) reads the photo — no image is uploaded or stored h
 
 - `401` on `/mcp`: token missing/expired, or issued for a different issuer —
   reconnect and check `MCP_OAUTH_ISSUER` matches the URL you opened.
-- `redirect_uri is not allowed`: add the client's exact redirect URI to
-  `MCP_OAUTH_REDIRECT_URIS` and redeploy.
+- `redirect_uri ... is not supported`: the client sent a plain-http (non-loopback)
+  redirect. Use a client with an https or loopback redirect — all of those are
+  accepted automatically.
 - Consent page loops to login: cookies are blocked, or `ADMIN_*` env is unset.
 - `503 MCP authentication is not configured`: OAuth env incomplete.
 - Rollback: clear the `MCP_OAUTH_*` variables and redeploy. Existing web admin,

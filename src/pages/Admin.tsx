@@ -518,8 +518,7 @@ export default function Admin() {
 MCP_OAUTH_CLIENT_ID=<random panjang>
 MCP_OAUTH_CLIENT_SECRET=<random panjang>
 MCP_OAUTH_SIGNING_SECRET=<random panjang>
-MCP_OAUTH_DCR_ENABLED=true
-# MCP_OAUTH_REDIRECT_URIS=  (opsional, boleh kosong — URI dari client)`}</pre>
+# Semua redirect URI client otomatis diterima — tidak perlu daftar URI`}</pre>
                       <p className="text-xs font-bold text-[#825e43] mt-2">Buat nilai random: <code>openssl rand -hex 32</code>. Jangan bagikan Client Secret / Signing Secret. Setelah redeploy, status di atas berubah jadi OAuth Aktif.</p>
                     </div>
                   )}
@@ -544,7 +543,7 @@ MCP_OAUTH_DCR_ENABLED=true
                   <div className="bg-white border-2 border-[#e6d5b8] rounded-xl p-4">
                     <p className="text-[10px] font-extrabold text-[#825e43] uppercase tracking-wide mb-2">Cara pakai</p>
                     <ol className="list-decimal list-inside space-y-1.5 text-xs font-bold text-[#3b2313]">
-                      <li>Gemini Spark: Connected Apps → Custom app → MCP URL di atas + Client ID/Secret dari .env → salin redirect URI Gemini ke <code>MCP_OAUTH_REDIRECT_URIS</code> → redeploy → Connect.</li>
+                      <li>Gemini Spark: Connected Apps → Custom app → MCP URL di atas + Client ID/Secret dari .env → Connect. Semua redirect URI client otomatis diterima.</li>
                       <li>Cursor / Claude: tambah remote MCP server dengan MCP URL di atas, lalu jalankan OAuth. Login memakai email/password Admin ini, lalu klik Izinkan.</li>
                       <li>Di chat agen: "tampilkan produk dan stok", "tambah produk …", "tambah stok …", atau kirim foto struk belanja.</li>
                       <li className="flex gap-1.5"><ReceiptText className="w-4 h-4 text-[#e68a2e] shrink-0" /><span>Foto struk: agen membaca foto → preview produk/stok → kamu setujui → baru diterapkan. Harga jual produk baru selalu kamu tentukan, bukan dari harga beli di struk.</span></li>

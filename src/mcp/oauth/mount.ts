@@ -95,6 +95,7 @@ function renderConsentPage(pendingAuth: PendingAuthorization): string {
     'Izinkan Akses MCP',
     `<h1>Izinkan akses MCP?</h1>
      <p>Aplikasi <strong>${escapeHtml(pendingAuth.clientId)}</strong> meminta akses ke MCP Kopi Kita atas nama admin.</p>
+     <p>Kembali ke: <strong>${escapeHtml(pendingAuth.redirectUri)}</strong></p>
      <div class="scope">scope: ${escapeHtml(pendingAuth.scope)}</div>
      <p>kopi:read = lihat produk/stok/saldo/riwayat. kopi:products:write = buat/ubah produk. kopi:stock:write = ubah stok. Tidak ada akses pencairan dana.</p>
      <form method="POST" action="/oauth/consent">
@@ -127,7 +128,15 @@ async function handleAuthorize(req: Request, res: Response): Promise<void> {
     return;
   }
   if (!(await isRedirectUriAllowed(clientId, redirectUri))) {
-    oauthError(res, 400, 'invalid_request', 'redirect_uri is not allowed for this client.');
+    console.warn(
+      `MCP OAuth: rejected redirect_uri "${redirectUri}" for client_id "${clientId}" (only https, or http on loopback, is accepted).`,
+    );
+    oauthError(
+      res,
+      400,
+      'invalid_request',
+      `redirect_uri "${redirectUri}" is not supported: use an https redirect URI (or http on localhost/127.0.0.1).`,
+    );
     return;
   }
 

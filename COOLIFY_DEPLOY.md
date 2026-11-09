@@ -26,7 +26,7 @@ Create the following environment variables in Coolify:
 | `APP_URL` / `MCP_OAUTH_ISSUER` | ⚪ MCP only | Public HTTPS origin, no trailing slash, e.g. `https://kopi.example.com` |
 | `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` | ⚪ MCP only | Static OAuth client for Gemini Spark etc. Long random values |
 | `MCP_OAUTH_SIGNING_SECRET` | ⚪ MCP only | Long random JWT signing secret |
-| `MCP_OAUTH_REDIRECT_URIS` | ⚪ Optional | Comma-separated extra redirect URIs from your MCP client |
+| `MCP_OAUTH_REDIRECT_URIS` | — | Not used anymore; every client redirect URI is accepted automatically |
 | `MCP_OAUTH_DCR_ENABLED` | ⚪ Optional | `true` enables Dynamic Client Registration |
 | `NODE_ENV` | ✅ Auto | Set to `production` by Coolify |
 
