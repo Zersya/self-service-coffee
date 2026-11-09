@@ -6,6 +6,15 @@ import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 import { db } from "./src/db";
 import { beans, orders, configs, disbursements } from "./src/db/schema";
+import {
+  createProduct,
+  deactivateProduct,
+  listProducts,
+  updateProduct,
+  ProductServiceError,
+} from "./src/services/products";
+import { getBalance, listOrderHistory } from "./src/services/reports";
+import { mountMcp } from "./src/mcp/mount";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 dotenv.config();
@@ -184,11 +193,10 @@ async function startServer() {
 
   // Admin: List all beans
   app.get("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const allBeans = await db.select().from(beans).orderBy(desc(beans.createdAt));
-      res.json(allBeans);
+      res.json(await listProducts(true));
     } catch (e) {
+      if (e instanceof ProductServiceError) return res.status(e.status).json({ error: e.message });
       console.error("Admin beans list error:", e);
       res.status(500).json({ error: "Failed to fetch beans" });
     }
@@ -196,57 +204,22 @@ async function startServer() {
 
   // Admin: Create bean
   app.post("/api/admin/beans", adminAuthMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const { name, slug, description, imageUrl, pricePer250g, unitType, stock } = req.body;
-      if (!name || !slug) {
-        return res.status(400).json({ error: "Name and slug are required" });
-      }
-      const result = await db.insert(beans).values({
-        name,
-        slug,
-        description: description || null,
-        imageUrl: imageUrl || null,
-        pricePer250g: pricePer250g || 100000,
-        unitType: unitType || 'gram',
-        stock: stock === undefined || stock === null || stock === '' ? null : String(parseFloat(stock)),
-      }).returning();
-      res.json(result[0]);
-    } catch (e: any) {
+      res.json(await createProduct(req.body));
+    } catch (e) {
+      if (e instanceof ProductServiceError) return res.status(e.status).json({ error: e.message });
       console.error("Admin create bean error:", e);
-      if (e?.code === '23505') {
-        return res.status(400).json({ error: "A bean with this slug already exists" });
-      }
       res.status(500).json({ error: "Failed to create bean" });
     }
   });
 
   // Admin: Update bean
   app.put("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
       const id = parseInt(req.params.id, 10);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
-      const { name, slug, description, imageUrl, pricePer250g, unitType, isActive, stock } = req.body;
-      const updateData: any = {};
-      if (name !== undefined) updateData.name = name;
-      if (slug !== undefined) updateData.slug = slug;
-      if (description !== undefined) updateData.description = description;
-      if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
-      if (pricePer250g !== undefined) updateData.pricePer250g = pricePer250g;
-      if (unitType !== undefined) updateData.unitType = unitType;
-      if (isActive !== undefined) updateData.isActive = isActive;
-      if (stock !== undefined) updateData.stock = stock === null || stock === '' ? null : String(parseFloat(stock));
-
-      const result = await db.update(beans)
-        .set(updateData)
-        .where(eq(beans.id, id))
-        .returning();
-      if (result.length === 0) {
-        return res.status(404).json({ error: "Bean not found" });
-      }
-      res.json(result[0]);
-    } catch (e: any) {
+      res.json(await updateProduct(id, req.body));
+    } catch (e) {
+      if (e instanceof ProductServiceError) return res.status(e.status).json({ error: e.message });
       console.error("Admin update bean error:", e);
       res.status(500).json({ error: "Failed to update bean" });
     }
@@ -254,19 +227,12 @@ async function startServer() {
 
   // Admin: Delete bean (soft delete)
   app.delete("/api/admin/beans/:id", adminAuthMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
       const id = parseInt(req.params.id, 10);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid bean ID" });
-      const result = await db.update(beans)
-        .set({ isActive: false })
-        .where(eq(beans.id, id))
-        .returning();
-      if (result.length === 0) {
-        return res.status(404).json({ error: "Bean not found" });
-      }
-      res.json({ success: true, bean: result[0] });
+      const bean = await deactivateProduct(id);
+      res.json({ success: true, bean });
     } catch (e) {
+      if (e instanceof ProductServiceError) return res.status(e.status).json({ error: e.message });
       console.error("Admin delete bean error:", e);
       res.status(500).json({ error: "Failed to delete bean" });
     }
@@ -732,16 +698,10 @@ async function startServer() {
   app.get("/api/history", async (req, res) => {
     if (!db) return res.status(503).json({ error: "Database not configured" });
     try {
-      const fromDate = parseDateParam(req.query.from);
-      const toDate = parseDateParam(req.query.to);
-      const where = and(
-        fromDate ? gte(orders.createdAt, fromDate) : undefined,
-        toDate ? lte(orders.createdAt, toDate) : undefined,
-      );
-      const history = await db.select().from(orders)
-        .where(where)
-        .orderBy(desc(orders.createdAt))
-        .limit(where ? 500 : 50);
+      const history = await listOrderHistory({
+        from: parseDateParam(req.query.from),
+        to: parseDateParam(req.query.to),
+      });
       res.json(history);
     } catch (e) {
       console.error("DB History Error:", e);
@@ -899,7 +859,7 @@ async function startServer() {
               b.slug || 'unknown',
               b.name,
               splitIncome,
-              parseFloat(b.grams),
+              Number(b.grams),
               b.unitType || 'gram',
             );
           }
@@ -1257,6 +1217,9 @@ async function startServer() {
       });
     }
   });
+
+  // MCP + OAuth (must be before Vite/static catch-all)
+  mountMcp(app);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

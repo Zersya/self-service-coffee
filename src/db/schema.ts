@@ -52,6 +52,36 @@ export const disbursements = pgTable('disbursements', {
   processedBy: text('processed_by'),
 });
 
+export const mcpOauthClients = pgTable('mcp_oauth_clients', {
+  id: serial('id').primaryKey(),
+  clientId: text('client_id').notNull().unique(),
+  clientSecretHash: text('client_secret_hash'),
+  clientName: text('client_name'),
+  redirectUris: text('redirect_uris').notNull(), // JSON array of strings
+  grantTypes: text('grant_types').notNull().default('authorization_code'),
+  responseTypes: text('response_types').notNull().default('code'),
+  tokenEndpointAuthMethod: text('token_endpoint_auth_method').notNull().default('client_secret_post'),
+  scope: text('scope').notNull().default('kopi:read'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const mcpAuditLogs = pgTable('mcp_audit_logs', {
+  id: serial('id').primaryKey(),
+  actorSub: text('actor_sub'),
+  clientId: text('client_id'),
+  toolName: text('tool_name').notNull(),
+  action: text('action').notNull(),
+  targetType: text('target_type'),
+  targetId: integer('target_id'),
+  targetSlug: text('target_slug'),
+  beforeJson: text('before_json'),
+  afterJson: text('after_json'),
+  idempotencyKey: text('idempotency_key').unique(),
+  success: boolean('success').notNull().default(true),
+  error: text('error'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 export const members = pgTable('members', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),

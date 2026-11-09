@@ -16,7 +16,22 @@ services:
       
       # Optional: Gemini API key (if using AI features)
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      
+
+      # Admin login (also gates MCP OAuth consent)
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+
+      # MCP + OAuth (optional)
+      - APP_URL=${APP_URL}
+      - MCP_OAUTH_ISSUER=${MCP_OAUTH_ISSUER}
+      - MCP_OAUTH_CLIENT_ID=${MCP_OAUTH_CLIENT_ID}
+      - MCP_OAUTH_CLIENT_SECRET=${MCP_OAUTH_CLIENT_SECRET}
+      - MCP_OAUTH_SIGNING_SECRET=${MCP_OAUTH_SIGNING_SECRET}
+      - MCP_OAUTH_REDIRECT_URIS=${MCP_OAUTH_REDIRECT_URIS}
+      - MCP_OAUTH_TOKEN_EXPIRY=${MCP_OAUTH_TOKEN_EXPIRY:-3600}
+      - MCP_OAUTH_DCR_ENABLED=${MCP_OAUTH_DCR_ENABLED:-false}
+      - MCP_STATIC_TOKEN=${MCP_STATIC_TOKEN}
+
       # Production mode
       - NODE_ENV=production
     healthcheck:

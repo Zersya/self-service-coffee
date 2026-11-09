@@ -21,6 +21,13 @@ Create the following environment variables in Coolify:
 | `MIDTRANS_CLIENT_KEY` | ✅ Yes | Midtrans Client Key from dashboard |
 | `MIDTRANS_IS_PRODUCTION` | ✅ Yes | Set to `true` for production, `false` for sandbox |
 | `GEMINI_API_KEY` | ⚪ Optional | Google Gemini API key (if using AI features) |
+| `ADMIN_EMAIL` | ✅ Yes (admin/MCP) | Admin login email; also gates MCP OAuth consent |
+| `ADMIN_PASSWORD` | ✅ Yes (admin/MCP) | Admin login password |
+| `APP_URL` / `MCP_OAUTH_ISSUER` | ⚪ MCP only | Public HTTPS origin, no trailing slash, e.g. `https://kopi.example.com` |
+| `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` | ⚪ MCP only | Static OAuth client for Gemini Spark etc. Long random values |
+| `MCP_OAUTH_SIGNING_SECRET` | ⚪ MCP only | Long random JWT signing secret |
+| `MCP_OAUTH_REDIRECT_URIS` | ⚪ Optional | Comma-separated extra redirect URIs from your MCP client |
+| `MCP_OAUTH_DCR_ENABLED` | ⚪ Optional | `true` enables Dynamic Client Registration |
 | `NODE_ENV` | ✅ Auto | Set to `production` by Coolify |
 
 ### 2. Coolify Configuration

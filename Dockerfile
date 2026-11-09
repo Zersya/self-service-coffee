@@ -35,8 +35,10 @@ COPY --from=builder /app/dist ./dist
 # Copy server file
 COPY server.ts ./
 
-# Copy database files (needed for Drizzle)
+# Copy server-side source (db, services, MCP). Frontend src is not needed at runtime.
 COPY src/db ./src/db
+COPY src/services ./src/services
+COPY src/mcp ./src/mcp
 COPY drizzle.config.ts ./
 
 # Environment
