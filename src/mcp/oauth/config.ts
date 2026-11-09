@@ -45,9 +45,9 @@ export function isMcpOAuthEnabled(): boolean {
   return Boolean(getMcpOAuthClientId() && getMcpOAuthClientSecret() && getMcpOAuthSigningSecret());
 }
 
-/** DCR is on by default so every client works automatically; set MCP_OAUTH_DCR_ENABLED=false to disable. */
+/** DCR is always on when OAuth is on, so every client (incl. Gemini) self-registers automatically. */
 export function isDcrEnabled(): boolean {
-  return isMcpOAuthEnabled() && process.env.MCP_OAUTH_DCR_ENABLED?.trim() !== 'false';
+  return isMcpOAuthEnabled();
 }
 
 export function getStaticToken(): string | undefined {

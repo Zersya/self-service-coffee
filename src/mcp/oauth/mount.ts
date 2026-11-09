@@ -350,7 +350,8 @@ async function handleRegister(req: Request, res: Response): Promise<void> {
   });
   res.status(201).json({
     client_id: clientId,
-    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    client_id_issued_at: Math.floor(Date.now() / 1000),
+    ...(clientSecret ? { client_secret: clientSecret, client_secret_expires_at: 0 } : {}),
     client_name: typeof body.client_name === 'string' ? body.client_name : undefined,
     redirect_uris: redirectUris,
     grant_types: ['authorization_code'],

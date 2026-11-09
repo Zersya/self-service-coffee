@@ -233,7 +233,7 @@ async function startServer() {
         { name: 'MCP_OAUTH_CLIENT_SECRET', configured: Boolean(process.env.MCP_OAUTH_CLIENT_SECRET?.trim()), required: true },
         { name: 'MCP_OAUTH_SIGNING_SECRET', configured: Boolean(process.env.MCP_OAUTH_SIGNING_SECRET?.trim()), required: true },
         { name: 'MCP_OAUTH_REDIRECT_URIS', configured: getConfiguredRedirectUris().length > 0, required: false, hint: 'Tidak dipakai lagi — semua redirect URI otomatis diterima' },
-        { name: 'MCP_OAUTH_DCR_ENABLED', configured: isDcrEnabled(), required: false, hint: 'Set to true for clients that self-register' },
+        { name: 'MCP_OAUTH_DCR_ENABLED', configured: isDcrEnabled(), required: false, hint: 'Tidak dipakai lagi — DCR selalu aktif' },
         { name: 'MCP_STATIC_TOKEN', configured: Boolean(getStaticToken()), required: false, hint: 'Local read-only testing only' },
       ],
     });

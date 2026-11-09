@@ -11,7 +11,7 @@ before(() => {
   process.env.ADMIN_EMAIL = 'admin@kopi-kita.com';
   process.env.ADMIN_PASSWORD = 'test-admin-password';
   // Keep unit tests off the real database (DCR client lookup is DB-backed).
-  process.env.MCP_OAUTH_DCR_ENABLED = 'false';
+  process.env.DATABASE_URL = '';
 });
 
 test('PKCE S256 accepts valid verifier and rejects wrong one', async () => {
@@ -66,12 +66,12 @@ test('unknown public clients can exchange a code; the static client still needs 
   assert.equal(await validateClientCredentials('test-client', 'test-secret'), true);
 });
 
-test('DCR is on by default and only disabled by explicit false', async () => {
+test('DCR is always on when OAuth is on (no env opt-out)', async () => {
   const { isDcrEnabled } = await import('../../src/mcp/oauth/config');
   delete process.env.MCP_OAUTH_DCR_ENABLED;
   assert.equal(isDcrEnabled(), true);
   process.env.MCP_OAUTH_DCR_ENABLED = 'false';
-  assert.equal(isDcrEnabled(), false);
+  assert.equal(isDcrEnabled(), true);
 });
 
 test('admin credentials use the configured email/password', async () => {

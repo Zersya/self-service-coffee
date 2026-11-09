@@ -28,8 +28,7 @@ MCP_OAUTH_CLIENT_ID=<long random>
 MCP_OAUTH_CLIENT_SECRET=<long random>
 MCP_OAUTH_SIGNING_SECRET=<long random>
 MCP_OAUTH_TOKEN_EXPIRY=3600
-# DCR is on by default and every client redirect URI is accepted automatically.
-# MCP_OAUTH_DCR_ENABLED=false  # only to disable DCR
+# DCR is always on and every client redirect URI is accepted automatically.
 ```
 
 Run the DB migration once (`npm run db:push`) — it adds `mcp_oauth_clients` and
