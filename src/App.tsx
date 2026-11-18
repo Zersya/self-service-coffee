@@ -1271,6 +1271,19 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#4a2e1b] flex flex-col items-center p-4 sm:p-6 font-sans text-[#3b2313] relative overflow-hidden">
       
+      {/* Cross-promo banner: lokalbdg AI free token credit */}
+      <a
+        href="https://ai.lokalbdg.com/?utm_source=kopi-kita&utm_medium=banner&utm_campaign=token-gratis"
+        target="_blank"
+        rel="noopener"
+        className="relative z-20 w-full max-w-md flex items-center justify-between gap-3 bg-[#e68a2e] text-white rounded-2xl px-4 py-3 shadow-lg shadow-[#e68a2e]/30 border border-[#fdf4e3]/30 hover:bg-[#d97d22] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fdf4e3] transition-colors"
+      >
+        <span className="flex flex-col leading-tight">
+          <span className="font-extrabold text-base">Token Gratis Rp5.000</span>
+          <span className="text-xs font-medium text-white/90">Daftar lokalbdg AI, coba DeepSeek, Kimi, dan GLM lewat API.</span>
+        </span>
+        <span className="shrink-0 bg-[#fdf4e3] text-[#4a2e1b] font-extrabold text-xs px-3 py-2 rounded-full">Klaim</span>
+      </a>
       {/* Decorative Elements matching poster style */}
       <div className="absolute top-10 left-10 opacity-20 text-[#e68a2e] animate-float pointer-events-none">
         <Coffee className="w-24 h-24" />
