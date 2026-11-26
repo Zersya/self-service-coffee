@@ -1279,7 +1279,7 @@ export default function App() {
         className="relative z-20 w-full max-w-md flex items-center justify-between gap-3 bg-[#e68a2e] text-white rounded-2xl px-4 py-3 shadow-lg shadow-[#e68a2e]/30 border border-[#fdf4e3]/30 hover:bg-[#d97d22] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fdf4e3] transition-colors"
       >
         <span className="flex flex-col leading-tight">
-          <span className="font-extrabold text-base">Token Gratis Rp5.000</span>
+          <span className="font-extrabold text-base">Token Gratis Rp20.000</span>
           <span className="text-xs font-medium text-white/90">Daftar lokalbdg AI, coba DeepSeek, Kimi, dan GLM lewat API.</span>
         </span>
         <span className="shrink-0 bg-[#fdf4e3] text-[#4a2e1b] font-extrabold text-xs px-3 py-2 rounded-full">Klaim</span>
